@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime
 
+from vibetrading.core.exceptions import InvalidRiskTokenError
 from vibetrading.core.models import (
     Candle,
     FundsSnapshot,
@@ -12,6 +13,7 @@ from vibetrading.core.models import (
     Position,
     Stock,
 )
+from vibetrading.risk.tokens import RiskApprovalToken, verify_and_consume_token
 
 
 class BrokerClient(ABC):
@@ -23,11 +25,25 @@ class BrokerClient(ABC):
     local dev, tests, and paper-trading mode.
     """
 
+    @staticmethod
+    def _require_valid_token(risk_token: RiskApprovalToken | None) -> None:
+        """Every place_order() implementation MUST call this first. This is
+        what makes RiskEngine.approve_and_execute the only path to a real
+        order — a missing, forged, expired, or reused token is refused
+        before any broker/network call happens.
+        """
+        if not verify_and_consume_token(risk_token):
+            raise InvalidRiskTokenError(
+                "place_order called without a valid, unused RiskApprovalToken. "
+                "Orders must go through risk.engine.RiskEngine.approve_and_execute()."
+            )
+
     @abstractmethod
-    async def place_order(self, order_request: OrderRequest) -> OrderResult:
-        """Submit an order. Callers outside the Risk Agent must never call this
-        directly in live mode — see risk.engine.RiskEngine.approve_and_execute,
-        which is the only sanctioned path to real order placement."""
+    async def place_order(self, order_request: OrderRequest, risk_token: RiskApprovalToken) -> OrderResult:
+        """Submit an order. Never call this directly — go through
+        risk.engine.RiskEngine.approve_and_execute(), the only path that can
+        produce a valid risk_token. Implementations must call
+        self._require_valid_token(risk_token) before doing anything else."""
 
     @abstractmethod
     async def cancel_order(self, order_id: str) -> bool:

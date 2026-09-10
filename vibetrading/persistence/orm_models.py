@@ -113,14 +113,19 @@ class RiskEventORM(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
-class KillSwitchStateORM(Base):
-    """Single-row table holding the live kill-switch state (source of truth beyond env default)."""
+class RiskStateORM(Base):
+    """Single row (id=1) holding the live Risk Agent state: kill switch and
+    running daily realized P&L (reset when daily_pnl_date rolls over) — the
+    source of truth beyond the env-configured default once the app is running.
+    """
 
-    __tablename__ = "kill_switch_state"
+    __tablename__ = "risk_state"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    active: Mapped[bool] = mapped_column(Boolean, default=False)
-    mode: Mapped[str] = mapped_column(String(32), default="halt_new_orders")
+    kill_switch_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    kill_switch_mode: Mapped[str] = mapped_column(String(32), default="halt_new_orders")
+    daily_realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    daily_pnl_date: Mapped[str] = mapped_column(String(10))  # ISO date, e.g. "2025-01-31"
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
 

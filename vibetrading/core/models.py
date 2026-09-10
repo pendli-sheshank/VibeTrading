@@ -95,6 +95,11 @@ class OrderResult(BaseModel):
     status: OrderStatus
     filled_quantity: int = 0
     filled_price: float | None = None
+    # Realized P&L this specific fill booked (0.0 for an opening/increasing
+    # trade; nonzero when it reduced/closed an existing position). Used by
+    # the Risk Agent's daily-loss circuit breaker. Best-effort per broker —
+    # a broker that can't compute this cheaply may always report 0.0.
+    realized_pnl: float = 0.0
     raw_response: dict = Field(default_factory=dict)
 
 

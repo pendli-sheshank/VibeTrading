@@ -44,6 +44,7 @@ async def test_technical_agent_is_deterministic_for_same_seed():
 async def test_mock_broker_place_order_updates_positions_and_funds():
     from vibetrading.core.enums import ExecutionMode, OrderSide
     from vibetrading.core.models import OrderRequest
+    from vibetrading.risk.tokens import mint_token
 
     broker = MockBrokerClient(seed=5, initial_funds=100_000.0)
     stock = Stock(symbol="INFY")
@@ -52,7 +53,8 @@ async def test_mock_broker_place_order_updates_positions_and_funds():
     order = OrderRequest(
         stock_symbol="INFY", side=OrderSide.BUY, quantity=10, mode=ExecutionMode.PAPER
     )
-    result = await broker.place_order(order)
+    token = mint_token(signal_id=None, stock_symbol="INFY", quantity=10)
+    result = await broker.place_order(order, token)
 
     assert result.filled_quantity == 10
     assert result.filled_price == ltp

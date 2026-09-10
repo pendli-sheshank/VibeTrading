@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     vibetrading_execution_mode: ExecutionMode = ExecutionMode.PAPER
     vibetrading_kill_switch: bool = False
     vibetrading_kill_switch_mode: KillSwitchMode = KillSwitchMode.HALT_NEW_ORDERS
+    # Signs RiskApprovalTokens (risk/tokens.py). MUST be overridden with a
+    # real random secret before running in live mode — the insecure default
+    # is fine for dev/paper mode only.
+    risk_token_secret: str = "dev-insecure-secret-change-me"
 
     # --- Dhan broker --------------------------------------------------------
     dhan_client_id: str = ""

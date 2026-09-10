@@ -16,6 +16,7 @@ from vibetrading.core.models import (
     Position,
     Stock,
 )
+from vibetrading.risk.tokens import RiskApprovalToken
 
 
 class MockBrokerClient(BrokerClient):
@@ -76,12 +77,15 @@ class MockBrokerClient(BrokerClient):
         candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=2), now)
         return candles[-1].close if candles else 0.0
 
-    async def place_order(self, order_request: OrderRequest) -> OrderResult:
+    async def place_order(self, order_request: OrderRequest, risk_token: RiskApprovalToken) -> OrderResult:
+        self._require_valid_token(risk_token)
+
         if order_request.quantity <= 0:
             raise OrderRejectedError("Order quantity must be positive")
 
         ltp = await self.get_ltp(Stock(symbol=order_request.stock_symbol))
         fill_price = order_request.limit_price or ltp
+        realized_pnl = self._apply_fill(order_request, fill_price)
 
         order_id = str(uuid.uuid4())
         result = OrderResult(
@@ -90,22 +94,25 @@ class MockBrokerClient(BrokerClient):
             status=OrderStatus.FILLED,
             filled_quantity=order_request.quantity,
             filled_price=fill_price,
+            realized_pnl=realized_pnl,
             raw_response={"mode": ExecutionMode.PAPER.value},
         )
         self._orders[order_id] = result
-        self._apply_fill(order_request, fill_price)
         return result
 
-    def _apply_fill(self, order_request: OrderRequest, fill_price: float) -> None:
+    def _apply_fill(self, order_request: OrderRequest, fill_price: float) -> float:
+        """Applies a fill to positions/funds and returns the realized P&L this
+        specific fill booked (0.0 for an opening/increasing trade).
+        """
         symbol = order_request.stock_symbol
         signed_qty = order_request.quantity if order_request.side == OrderSide.BUY else -order_request.quantity
         cost = fill_price * order_request.quantity
         self._funds.available_balance -= cost if order_request.side == OrderSide.BUY else -cost
 
         existing = self._positions.get(symbol)
-        if existing is None:
+        if existing is None or existing.quantity == 0:
             if signed_qty == 0:
-                return
+                return 0.0
             self._positions[symbol] = Position(
                 stock_symbol=symbol,
                 quantity=signed_qty,
@@ -113,19 +120,36 @@ class MockBrokerClient(BrokerClient):
                 stop_loss_price=order_request.stop_loss_price,
                 opened_at=datetime.now(UTC),
             )
-            return
+            return 0.0
+
+        same_direction = (existing.quantity > 0 and signed_qty > 0) or (existing.quantity < 0 and signed_qty < 0)
+        if same_direction:
+            new_quantity = existing.quantity + signed_qty
+            total_cost = existing.avg_price * existing.quantity + fill_price * signed_qty
+            existing.avg_price = total_cost / new_quantity
+            existing.quantity = new_quantity
+            return 0.0
+
+        # Opposite direction: this reduces, closes, or flips the position.
+        closing_qty = min(abs(existing.quantity), abs(signed_qty))
+        if existing.quantity > 0:
+            realized_pnl = (fill_price - existing.avg_price) * closing_qty
+        else:
+            realized_pnl = (existing.avg_price - fill_price) * closing_qty
+        existing.realized_pnl += realized_pnl
 
         new_quantity = existing.quantity + signed_qty
         if new_quantity == 0:
-            realized = (fill_price - existing.avg_price) * min(existing.quantity, order_request.quantity)
-            existing.realized_pnl += realized
             del self._positions[symbol]
-            return
+        elif (new_quantity > 0) != (existing.quantity > 0):
+            # Flipped direction: the remainder is a fresh position at fill_price.
+            existing.quantity = new_quantity
+            existing.avg_price = fill_price
+            existing.opened_at = datetime.now(UTC)
+        else:
+            existing.quantity = new_quantity
 
-        if (existing.quantity > 0 and signed_qty > 0) or (existing.quantity < 0 and signed_qty < 0):
-            total_cost = existing.avg_price * existing.quantity + fill_price * signed_qty
-            existing.avg_price = total_cost / new_quantity
-        existing.quantity = new_quantity
+        return realized_pnl
 
     async def cancel_order(self, order_id: str) -> bool:
         order = self._orders.get(order_id)
