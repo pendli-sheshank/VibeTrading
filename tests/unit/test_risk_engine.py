@@ -147,7 +147,9 @@ async def test_kill_switch_halt_new_orders_still_allows_stop_loss_exit(db_sessio
     broker = SpyBroker(db_session)
     engine = RiskEngine(broker=broker, config=make_config())
 
-    exit_signal = make_signal(source=SignalSource.SYSTEM_STOP_LOSS, action=ActionType.SELL, confidence=0.0)
+    exit_signal = make_signal(
+        source=SignalSource.SYSTEM_STOP_LOSS, action=ActionType.SELL, confidence=0.0, suggested_quantity=10
+    )
     result = await engine.approve_and_execute(db_session, exit_signal, STOCK)
 
     assert broker.called is True

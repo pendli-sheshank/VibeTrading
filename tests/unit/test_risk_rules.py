@@ -199,6 +199,31 @@ def test_position_size_zero_funds_fails():
     assert not outcome.passed
 
 
+def test_position_size_protective_exit_uses_exact_quantity_not_capped():
+    ctx = make_ctx(
+        signal=make_signal(
+            source=SignalSource.SYSTEM_STOP_LOSS,
+            action=ActionType.SELL,
+            reference_price=100.0,
+            suggested_quantity=500,  # far above the notional/pct caps below
+        ),
+        config=make_config(max_position_size_inr=1_000, max_pct_capital_per_stock=0.01),
+        available_funds=1_000.0,
+    )
+    outcome = MaxPositionSizeRule().check(ctx)
+    assert outcome.passed
+    assert ctx.quantity == 500  # not capped down to 10 (1000/100) or 0 (1% of 1000 / 100)
+
+
+def test_position_size_protective_exit_without_quantity_fails():
+    ctx = make_ctx(
+        signal=make_signal(source=SignalSource.SYSTEM_STOP_LOSS, action=ActionType.SELL, suggested_quantity=None)
+    )
+    outcome = MaxPositionSizeRule().check(ctx)
+    assert not outcome.passed
+    assert ctx.quantity == 0
+
+
 # --- MaxConcurrentPositionsRule -------------------------------------------
 
 
@@ -242,6 +267,18 @@ def test_exposure_exceeding_limit_fails():
     ctx.quantity = 500  # order_value = 50,000; total_capital = 10,000; limit = 1,000
     outcome = ExposureLimitRule().check(ctx)
     assert not outcome.passed
+
+
+def test_exposure_limit_exempts_protective_exit_even_over_limit():
+    ctx = make_ctx(
+        signal=make_signal(source=SignalSource.SYSTEM_STOP_LOSS, action=ActionType.SELL, reference_price=100.0),
+        config=make_config(max_total_exposure_pct=0.01),
+        available_funds=100.0,
+        total_exposure_inr=1_000_000.0,  # already way over any sane limit
+    )
+    ctx.quantity = 500  # would massively exceed the limit if this were a new entry
+    outcome = ExposureLimitRule().check(ctx)
+    assert outcome.passed
 
 
 # --- MandatoryStopLossRule -------------------------------------------------

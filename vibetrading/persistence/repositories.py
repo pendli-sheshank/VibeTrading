@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vibetrading.core.enums import AgentType
 from vibetrading.core.models import AgentOutput, BacktestResult, Signal, Stock
 from vibetrading.persistence.orm_models import (
     AgentRunORM,
@@ -71,6 +72,22 @@ async def get_latest_agent_output(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+def agent_output_from_orm(orm: AgentRunORM) -> AgentOutput:
+    """Reconstructs a pydantic AgentOutput (with `id` set) from a persisted
+    row — used wherever a later agent (e.g. StrategyAgent) needs to consume
+    an earlier agent's already-persisted output.
+    """
+    return AgentOutput(
+        id=orm.id,
+        agent_type=AgentType(orm.agent_type),
+        stock_symbol=orm.stock_symbol,
+        timestamp=orm.timestamp,
+        confidence=orm.confidence,
+        summary=orm.summary,
+        raw_data=orm.raw_data,
+    )
 
 
 async def save_signal(session: AsyncSession, signal: Signal) -> SignalORM:

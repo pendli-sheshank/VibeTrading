@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./vibetrading.db"
 
     # --- Scheduling intervals (seconds) -----------------------------------
+    enable_scheduler: bool = True
     agent_interval_research_sec: int = 900
     agent_interval_strategy_sec: int = 300
     agent_interval_stop_loss_monitor_sec: int = 30

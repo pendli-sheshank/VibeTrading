@@ -122,6 +122,15 @@ class MaxPositionSizeRule(RiskRule):
             ctx.quantity = 0
             return RuleOutcome(self.name, True, "HOLD action; no sizing needed.")
 
+        if _is_protective_exit(ctx.signal):
+            # A stop-loss exit must close the exact position size, never be
+            # re-capped by entry sizing limits — capping it here could leave
+            # a stub position open with no protection.
+            ctx.quantity = ctx.signal.suggested_quantity or 0
+            if ctx.quantity <= 0:
+                return RuleOutcome(self.name, False, "Protective exit signal is missing a quantity to close.")
+            return RuleOutcome(self.name, True, f"Protective exit: closing exact position size {ctx.quantity}.")
+
         price = ctx.signal.reference_price
         if price is None or price <= 0:
             ctx.quantity = 0
@@ -168,8 +177,8 @@ class ExposureLimitRule(RiskRule):
     name = "max_total_exposure"
 
     def check(self, ctx: RiskContext) -> RuleOutcome:
-        if ctx.signal.action == ActionType.HOLD or ctx.quantity <= 0:
-            return RuleOutcome(self.name, True, "No new exposure being added.")
+        if ctx.signal.action == ActionType.HOLD or ctx.quantity <= 0 or _is_protective_exit(ctx.signal):
+            return RuleOutcome(self.name, True, "No new exposure being added (or this is a protective exit).")
 
         order_value = ctx.quantity * (ctx.signal.reference_price or 0.0)
         total_capital = ctx.available_funds + ctx.total_exposure_inr
