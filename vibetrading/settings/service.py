@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +12,10 @@ from vibetrading.persistence.repositories import (
     list_app_settings,
     upsert_app_setting,
 )
-from vibetrading.settings.crypto import decrypt_value, encrypt_value
+from vibetrading.settings.crypto import SecretCryptoError, decrypt_value, encrypt_value
 from vibetrading.settings.registry import SETTINGS_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 
 async def load_settings_from_db(session: AsyncSession, settings: Settings | None = None) -> Settings:
@@ -44,8 +47,15 @@ async def load_settings_from_db(session: AsyncSession, settings: Settings | None
         field = SETTINGS_REGISTRY.get(row.key)
         if field is None or row.value is None:
             continue
-        raw = decrypt_value(row.value) if row.is_secret else row.value
-        overrides[row.key] = json.loads(raw)
+        try:
+            raw = decrypt_value(row.value) if row.is_secret else row.value
+            overrides[row.key] = json.loads(raw)
+        except SecretCryptoError:
+            # APP_SECRETS_KEY changed since this row was written -- skip it
+            # (the field keeps its already-reset class default above)
+            # rather than crashing the whole app on startup over one
+            # undecryptable credential.
+            logger.warning("Could not decrypt stored setting %r; falling back to its default.", row.key)
 
     merged = Settings.model_validate({**base, **overrides})
     for name, value in merged.model_dump().items():

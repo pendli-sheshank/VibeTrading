@@ -9,7 +9,7 @@ from vibetrading.config import get_settings
 from vibetrading.core.enums import ActionType, SignalSource
 from vibetrading.core.models import Signal, Stock
 from vibetrading.risk.engine import RiskEngine
-from vibetrading.settings.crypto import decrypt_value
+from vibetrading.settings.crypto import _fernet, decrypt_value
 from vibetrading.settings.service import clear_secret, load_settings_from_db, save_settings
 
 STOCK = Stock(symbol="TCS")
@@ -108,6 +108,25 @@ async def test_load_settings_from_db_with_no_rows_is_a_no_op(db_session):
     before = get_settings().model_dump()
     result = await load_settings_from_db(db_session)
     assert result.model_dump() == before
+
+
+async def test_undecryptable_secret_falls_back_to_default_instead_of_crashing(db_session, monkeypatch):
+    """A rotated APP_SECRETS_KEY makes previously-stored secrets
+    undecryptable. That must not crash the whole app on startup -- it
+    should behave like the row was never there (class default), with only
+    that one field affected."""
+    await save_settings(db_session, {"dhan_access_token": "some-token"})
+    await db_session.commit()
+    assert get_settings().dhan_access_token == "some-token"
+
+    monkeypatch.setattr(get_settings(), "app_secrets_key", "a-totally-different-key")
+    _fernet.cache_clear()
+    try:
+        result = await load_settings_from_db(db_session)
+    finally:
+        _fernet.cache_clear()
+
+    assert result.dhan_access_token == ""  # class default, not a crash
 
 
 async def test_execution_mode_enum_round_trips_correctly(db_session):
