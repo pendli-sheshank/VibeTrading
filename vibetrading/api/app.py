@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -9,13 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from vibetrading.api.routers import backtest, monitor, risk, strategy, system, watchlist
+from vibetrading.api.routers import backtest, health, monitor, risk, strategy, system, watchlist
 from vibetrading.api.websocket import websocket_endpoint
 from vibetrading.auth.backend import NotAuthenticated, current_active_user, current_dashboard_user
 from vibetrading.auth.routes import router as auth_router
 from vibetrading.dashboard.routes import router as dashboard_router
 from vibetrading.dashboard.routes_settings import router as settings_router
-from vibetrading.logging_conf import configure_logging
+from vibetrading.logging_conf import bind_request_id, configure_logging
 from vibetrading.orchestrator.manager import MultiTenantRuntimeManager
 from vibetrading.persistence.db import init_db
 from vibetrading.rate_limit import limiter
@@ -49,13 +50,28 @@ async def _not_authenticated_handler(request: Request, exc: NotAuthenticated) ->
     return RedirectResponse(url="/login", status_code=303)
 
 
+async def _request_id_middleware(request: Request, call_next):
+    """Binds a fresh request_id (see logging_conf.py) for the duration of
+    every HTTP request, before any route or dependency runs, so every log
+    line from a request -- across whatever it calls -- can be correlated.
+    Echoed back as X-Request-ID so a client (or an upstream proxy's own
+    logs) can cross-reference it too."""
+    request_id = uuid.uuid4().hex
+    with bind_request_id(request_id):
+        response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="VibeTrading", lifespan=lifespan)
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_exception_handler(NotAuthenticated, _not_authenticated_handler)
+    app.middleware("http")(_request_id_middleware)
 
+    app.include_router(health.router)
     app.include_router(auth_router)
 
     api_auth = [Depends(current_active_user)]

@@ -24,6 +24,7 @@ dependencies = [
     "fastapi-users[sqlalchemy]>=15.0",
     "slowapi>=0.1.9",
     "redis>=5.0",
+    "tenacity>=9.0",
 ]
 
 [project.optional-dependencies]

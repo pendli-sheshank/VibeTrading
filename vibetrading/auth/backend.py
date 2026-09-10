@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from fastapi import Depends, WebSocket, WebSocketException, status
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
@@ -7,6 +9,7 @@ from fastapi_users.manager import BaseUserManager
 
 from vibetrading.auth.manager import get_user_manager
 from vibetrading.config import get_settings
+from vibetrading.logging_conf import bind_tenant_id
 from vibetrading.persistence.orm_models import UserORM
 
 # 14-day session, matching a "stay signed in" dashboard convention rather
@@ -35,13 +38,23 @@ auth_backend = AuthenticationBackend(
 
 fastapi_users = FastAPIUsers[UserORM, int](get_user_manager, [auth_backend])
 
-# For pure API/JSON consumers: raises a 401 JSON response when unauthenticated.
-current_active_user = fastapi_users.current_user(active=True)
-
-# For dashboard HTML/HTMX routes: never raises 401 JSON directly (see
-# NotAuthenticated + its exception handler in api/app.py), redirecting a
-# human to /login instead of showing them a raw JSON error page.
+# The raw fastapi-users-built dependencies. Wrapped below (current_active_user,
+# current_dashboard_user) so every authenticated request gets its tenant_id
+# bound into logging_conf's contextvar for the request's whole duration --
+# every log line downstream (agents, risk engine, broker calls) is then
+# attributable to the tenant it ran for, without threading a logger
+# parameter through every function. dependency_overrides in tests targets
+# the wrapper (the same object every route's Depends() uses), so overriding
+# current_active_user with a fake user still works exactly as before --
+# it just bypasses the tenant_id binding too, which no test needs.
+_current_active_user_raw = fastapi_users.current_user(active=True)
 _current_user_optional = fastapi_users.current_user(active=True, optional=True)
+
+
+async def current_active_user(user: UserORM = Depends(_current_active_user_raw)) -> AsyncIterator[UserORM]:
+    """For pure API/JSON consumers: raises a 401 JSON response when unauthenticated."""
+    with bind_tenant_id(user.id):
+        yield user
 
 
 class NotAuthenticated(Exception):
@@ -51,10 +64,14 @@ class NotAuthenticated(Exception):
     api/app.py)."""
 
 
-async def current_dashboard_user(user: UserORM | None = Depends(_current_user_optional)) -> UserORM:
+async def current_dashboard_user(user: UserORM | None = Depends(_current_user_optional)) -> AsyncIterator[UserORM]:
+    """For dashboard HTML/HTMX routes: never raises 401 JSON directly (see
+    NotAuthenticated + its exception handler in api/app.py), redirecting a
+    human to /login instead of showing them a raw JSON error page."""
     if user is None:
         raise NotAuthenticated()
-    return user
+    with bind_tenant_id(user.id):
+        yield user
 
 
 async def current_websocket_user(

@@ -14,6 +14,7 @@ from vibetrading.config import Settings
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import Stock
 from vibetrading.llm.router import LLMRouter
+from vibetrading.logging_conf import bind_tenant_id
 from vibetrading.orchestrator.pipeline import TradingPipeline
 from vibetrading.orchestrator.stop_loss_monitor import StopLossMonitor
 from vibetrading.orchestrator.watchlist import get_watchlist
@@ -153,8 +154,9 @@ class OrchestratorScheduler:
     async def run_research_job(self, stock: Stock) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.pipeline.run_research_cycle(session, stock)
+            with bind_tenant_id(self.tenant_id):
+                async with get_session() as session:
+                    await self.pipeline.run_research_cycle(session, stock)
         except Exception:
             logger.exception("Research cycle failed for %s", stock.symbol)
         finally:
@@ -163,9 +165,10 @@ class OrchestratorScheduler:
     async def run_strategy_job(self, stock: Stock) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.pipeline.run_technical_cycle(session, stock)
-                await self.pipeline.run_strategy_cycle(session, stock)
+            with bind_tenant_id(self.tenant_id):
+                async with get_session() as session:
+                    await self.pipeline.run_technical_cycle(session, stock)
+                    await self.pipeline.run_strategy_cycle(session, stock)
         except Exception:
             logger.exception("Strategy cycle failed for %s", stock.symbol)
         finally:
@@ -174,8 +177,9 @@ class OrchestratorScheduler:
     async def run_stop_loss_monitor_job(self) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.stop_loss_monitor.check_all(session)
+            with bind_tenant_id(self.tenant_id):
+                async with get_session() as session:
+                    await self.stop_loss_monitor.check_all(session)
         except Exception:
             logger.exception("Stop-loss monitor cycle failed")
         finally:

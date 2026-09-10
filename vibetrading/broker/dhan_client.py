@@ -16,7 +16,18 @@ from vibetrading.core.models import (
     Position,
     Stock,
 )
+from vibetrading.core.reliability import with_retry_and_circuit_breaker
 from vibetrading.risk.tokens import RiskApprovalToken
+
+
+def _dhan_circuit_name(self: DhanBrokerClient, *args, **kwargs) -> str:
+    """One breaker per Dhan account (client_id), not one global "dhan"
+    breaker -- accounts have independent credentials/health, so one
+    tenant's broken API key or rate limit shouldn't fail-fast every other
+    tenant's Dhan calls too. Never applied to place_order() -- see that
+    method's own docstring for why a broker write must never be
+    automatically retried."""
+    return f"dhan:{self._client_id}"
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +65,7 @@ class DhanBrokerClient(BrokerClient):
                 "MockBrokerClient for paper trading."
             )
         self._client = _DhanSDKClient(client_id, access_token)
+        self._client_id = client_id
         self._security_id_cache: dict[str, str] = {}
 
     def _security_id(self, stock: Stock) -> str:
@@ -68,6 +80,12 @@ class DhanBrokerClient(BrokerClient):
         )
 
     async def place_order(self, order_request: OrderRequest, risk_token: RiskApprovalToken) -> OrderResult:
+        # Deliberately NOT wrapped in with_retry_and_circuit_breaker: an
+        # order placement is not idempotent. If the SDK call times out or
+        # its response is lost after Dhan already accepted the order,
+        # blindly retrying could submit a duplicate. A failed placement
+        # surfaces as a single BrokerError; the caller (RiskEngine) does
+        # not retry it either.
         self._require_valid_token(risk_token)
 
         security_id = self._security_id(Stock(symbol=order_request.stock_symbol))
@@ -106,6 +124,7 @@ class DhanBrokerClient(BrokerClient):
             raw_response=response if isinstance(response, dict) else {"raw": str(response)},
         )
 
+    @with_retry_and_circuit_breaker(_dhan_circuit_name, retry_on=(BrokerError,))
     async def cancel_order(self, order_id: str) -> bool:
         try:
             response = await asyncio.to_thread(self._client.cancel_order, order_id)
@@ -113,6 +132,7 @@ class DhanBrokerClient(BrokerClient):
             raise BrokerError(f"Dhan cancel_order failed for {order_id}: {exc}") from exc
         return bool(isinstance(response, dict) and response.get("status") != "failure")
 
+    @with_retry_and_circuit_breaker(_dhan_circuit_name, retry_on=(BrokerError,))
     async def get_positions(self) -> list[Position]:
         try:
             response = await asyncio.to_thread(self._client.get_positions)
@@ -137,6 +157,7 @@ class DhanBrokerClient(BrokerClient):
             )
         return positions
 
+    @with_retry_and_circuit_breaker(_dhan_circuit_name, retry_on=(BrokerError,))
     async def get_funds(self) -> FundsSnapshot:
         try:
             response = await asyncio.to_thread(self._client.get_fund_limits)
@@ -149,6 +170,7 @@ class DhanBrokerClient(BrokerClient):
             used_margin=float(data.get("utilizedAmount", 0) or 0),
         )
 
+    @with_retry_and_circuit_breaker(_dhan_circuit_name, retry_on=(BrokerError,))
     async def get_historical_candles(
         self, stock: Stock, interval: str, from_date: datetime, to_date: datetime
     ) -> list[Candle]:

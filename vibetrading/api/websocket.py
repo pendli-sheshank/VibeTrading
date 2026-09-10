@@ -7,6 +7,7 @@ import logging
 from fastapi import Depends, WebSocket, WebSocketDisconnect
 
 from vibetrading.auth.backend import current_websocket_user
+from vibetrading.logging_conf import bind_tenant_id
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.orchestrator.redis_bus import subscribe_tenant_channel
 from vibetrading.persistence.orm_models import UserORM
@@ -35,34 +36,35 @@ async def websocket_endpoint(websocket: WebSocket, user: UserORM = Depends(curre
             except Exception:  # noqa: BLE001 - a closing socket shouldn't crash this task
                 return
 
-    local_task = asyncio.create_task(pump_local())
+    with bind_tenant_id(user.id):
+        local_task = asyncio.create_task(pump_local())
 
-    async with subscribe_tenant_channel(user.id) as redis_messages:
-        redis_task: asyncio.Task | None = None
-        if redis_messages is not None:
+        async with subscribe_tenant_channel(user.id) as redis_messages:
+            redis_task: asyncio.Task | None = None
+            if redis_messages is not None:
 
-            async def pump_redis() -> None:
-                async for message in redis_messages:
-                    try:
-                        await websocket.send_json(message)
-                    except Exception:  # noqa: BLE001 - a closing socket shouldn't crash this task
-                        return
+                async def pump_redis() -> None:
+                    async for message in redis_messages:
+                        try:
+                            await websocket.send_json(message)
+                        except Exception:  # noqa: BLE001 - a closing socket shouldn't crash this task
+                            return
 
-            redis_task = asyncio.create_task(pump_redis())
+                redis_task = asyncio.create_task(pump_redis())
 
-        try:
-            while True:
-                # The dashboard client doesn't send anything meaningful;
-                # this just keeps the connection open and detects
-                # disconnects.
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            pass
-        finally:
-            event_bus.unsubscribe(user.id, queue)
-            for task in (local_task, redis_task):
-                if task is None:
-                    continue
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            try:
+                while True:
+                    # The dashboard client doesn't send anything
+                    # meaningful; this just keeps the connection open and
+                    # detects disconnects.
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                pass
+            finally:
+                event_bus.unsubscribe(user.id, queue)
+                for task in (local_task, redis_task):
+                    if task is None:
+                        continue
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
