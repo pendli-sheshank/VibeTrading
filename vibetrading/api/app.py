@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from vibetrading.api.routers import backtest, monitor, risk, strategy, system, watchlist
 from vibetrading.api.websocket import run_event_forwarder, websocket_endpoint
 from vibetrading.dashboard.routes import router as dashboard_router
+from vibetrading.dashboard.routes_settings import router as settings_router
 from vibetrading.logging_conf import configure_logging
 from vibetrading.orchestrator.runtime import OrchestratorRuntime
 from vibetrading.persistence.db import get_session, init_db
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.add_api_websocket_route("/ws", websocket_endpoint)
     app.include_router(dashboard_router)
+    app.include_router(settings_router)
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

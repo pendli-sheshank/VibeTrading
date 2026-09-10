@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.backtest.backtest_agent import BacktestAgent
@@ -17,6 +15,7 @@ from vibetrading.broker.base import BrokerClient
 from vibetrading.config import get_settings
 from vibetrading.core.enums import AgentType, KillSwitchMode
 from vibetrading.core.models import Stock
+from vibetrading.dashboard.templating import templates
 from vibetrading.llm.router import LLMRouter
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.persistence.repositories import (
@@ -29,9 +28,6 @@ from vibetrading.persistence.repositories import (
 )
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.state import get_or_create_risk_state, set_kill_switch
-
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter(include_in_schema=False)
 

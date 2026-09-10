@@ -44,34 +44,56 @@ class OrchestratorRuntime:
 
     async def start(self) -> None:
         async with self._lock:
-            await self._start_locked()
+            self._broker, self._scheduler = await self._build()
+            if self._scheduler is not None:
+                self._scheduler.start()
+            logger.info(
+                "OrchestratorRuntime started (broker=%s, scheduler=%s).",
+                type(self._broker).__name__,
+                "enabled" if self._scheduler else "disabled",
+            )
 
     async def restart(self) -> None:
-        """Tears down the current broker+scheduler — waiting for any
-        in-flight job to finish naturally first, see
-        OrchestratorScheduler.shutdown_gracefully() — and rebuilds both
-        from current settings. Never discards an order placement
-        mid-flight."""
+        """Rebuilds the broker+scheduler from current settings — and,
+        deliberately, builds the NEW pair fully before touching the OLD one.
+        A settings change that makes the new broker impossible to construct
+        (a typo'd Dhan credential, the dhanhq extra not being installed,
+        etc.) raises here with the previous broker+scheduler left running
+        untouched, rather than tearing them down first and leaving the
+        whole app without any broker at all until another settings change
+        happens to succeed.
+
+        Only once the new pair builds successfully does the old scheduler
+        get drained — waiting for any in-flight job to finish naturally,
+        see OrchestratorScheduler.shutdown_gracefully() — and swapped out.
+        Never discards an order placement mid-flight.
+        """
         async with self._lock:
-            await self._shutdown_locked()
-            await self._start_locked()
+            new_broker, new_scheduler = await self._build()
+
+            old_scheduler = self._scheduler
+            if old_scheduler is not None:
+                await old_scheduler.shutdown_gracefully()
+
+            self._broker, self._scheduler = new_broker, new_scheduler
+            if self._scheduler is not None:
+                self._scheduler.start()
+            logger.info(
+                "OrchestratorRuntime restarted (broker=%s, scheduler=%s).",
+                type(self._broker).__name__,
+                "enabled" if self._scheduler else "disabled",
+            )
 
     async def shutdown(self) -> None:
         async with self._lock:
             await self._shutdown_locked()
 
-    async def _start_locked(self) -> None:
-        self._broker = get_broker_client(self._settings)
+    async def _build(self) -> tuple[BrokerClient, OrchestratorScheduler | None]:
+        broker = get_broker_client(self._settings)
+        scheduler = None
         if self._settings.enable_scheduler:
-            self._scheduler = await build_scheduler(self._broker, self._settings)
-            self._scheduler.start()
-        else:
-            self._scheduler = None
-        logger.info(
-            "OrchestratorRuntime started (broker=%s, scheduler=%s).",
-            type(self._broker).__name__,
-            "enabled" if self._scheduler else "disabled",
-        )
+            scheduler = await build_scheduler(broker, self._settings)
+        return broker, scheduler
 
     async def _shutdown_locked(self) -> None:
         if self._scheduler is not None:
