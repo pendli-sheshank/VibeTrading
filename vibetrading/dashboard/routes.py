@@ -137,7 +137,8 @@ async def risk_kill_switch_toggle(
     )
     await session.commit()
     await event_bus.publish(
-        {"type": "kill_switch", "active": state.kill_switch_active, "mode": state.kill_switch_mode}
+        {"type": "kill_switch", "active": state.kill_switch_active, "mode": state.kill_switch_mode},
+        tenant_id=user.id,
     )
     ctx = await _risk_context(session, user.id)
     return templates.TemplateResponse(request, "_risk_panel.html", ctx)

@@ -59,7 +59,8 @@ class TradingPipeline:
                 "agent_type": AgentType.RESEARCH.value,
                 "stock_symbol": stock.symbol,
                 "confidence": output.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         return output
 
@@ -73,7 +74,8 @@ class TradingPipeline:
                 "agent_type": AgentType.TECHNICAL.value,
                 "stock_symbol": stock.symbol,
                 "confidence": output.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         return output
 
@@ -112,7 +114,8 @@ class TradingPipeline:
                 "stock_symbol": stock.symbol,
                 "action": signal.action.value,
                 "confidence": signal.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
 
         result = await self.risk_engine.approve_and_execute(session, signal, stock, signal_id=signal_orm.id)
@@ -124,7 +127,8 @@ class TradingPipeline:
                 "stock_symbol": stock.symbol,
                 "approved": result.approved,
                 "reasons": result.risk_check.reasons,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         if result.order_result is not None:
             await event_bus.publish(
@@ -133,7 +137,8 @@ class TradingPipeline:
                     "stock_symbol": stock.symbol,
                     "order_id": result.order_result.order_id,
                     "status": result.order_result.status.value,
-                }
+                },
+                tenant_id=self.tenant_id,
             )
 
         return result

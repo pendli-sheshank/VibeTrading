@@ -83,7 +83,7 @@ async def test_stop_loss_monitor_exits_breached_long_position(db_session):
     risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
     monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
 
-    queue = event_bus.subscribe()
+    queue = event_bus.subscribe(1)
     try:
         results = await monitor.check_all(db_session)
 
@@ -99,7 +99,7 @@ async def test_stop_loss_monitor_exits_breached_long_position(db_session):
             messages.append(queue.get_nowait())
         assert any(m["type"] == "stop_loss_exit" and m["approved"] for m in messages)
     finally:
-        event_bus.unsubscribe(queue)
+        event_bus.unsubscribe(1, queue)
 
 
 async def test_stop_loss_monitor_ignores_position_within_stop(db_session):

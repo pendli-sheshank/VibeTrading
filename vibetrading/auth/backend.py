@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import Depends
+from fastapi import Depends, WebSocket, WebSocketException, status
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
+from fastapi_users.manager import BaseUserManager
 
 from vibetrading.auth.manager import get_user_manager
 from vibetrading.config import get_settings
@@ -53,6 +54,25 @@ class NotAuthenticated(Exception):
 async def current_dashboard_user(user: UserORM | None = Depends(_current_user_optional)) -> UserORM:
     if user is None:
         raise NotAuthenticated()
+    return user
+
+
+async def current_websocket_user(
+    websocket: WebSocket, user_manager: BaseUserManager[UserORM, int] = Depends(get_user_manager)
+) -> UserORM:
+    """fastapi-users' current_user()-built dependencies (current_active_user,
+    current_dashboard_user) are built on transports/strategies that assume
+    an HTTP Request -- CookieTransport's underlying APIKeyCookie dependency
+    outright crashes (TypeError, not a clean 401) when FastAPI resolves it
+    against a WebSocket scope instead. This reads and verifies the same
+    session cookie by hand -- same JWTStrategy, same secret, same 14-day
+    lifetime -- for the one route (the dashboard WebSocket) that needs
+    auth on a WebSocket rather than a Request.
+    """
+    token = websocket.cookies.get(cookie_transport.cookie_name)
+    user = await get_jwt_strategy().read_token(token, user_manager) if token else None
+    if user is None or not user.is_active:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
     return user
 
 

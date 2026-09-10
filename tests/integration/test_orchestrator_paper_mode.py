@@ -36,7 +36,7 @@ async def test_paper_mode_accelerated_cycles_accumulate_rows_and_publish_events(
 
     stock = Stock(symbol="TCS")
 
-    queue = event_bus.subscribe()
+    queue = event_bus.subscribe(1)
     try:
         for _ in range(3):
             await scheduler.pipeline.run_research_cycle(db_session, stock)
@@ -65,7 +65,7 @@ async def test_paper_mode_accelerated_cycles_accumulate_rows_and_publish_events(
         assert "risk_decision" in message_types
         assert "order" in message_types
     finally:
-        event_bus.unsubscribe(queue)
+        event_bus.unsubscribe(1, queue)
 
 
 async def test_paper_mode_strategy_cycle_skips_when_no_technical_output_yet(db_session):

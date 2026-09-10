@@ -8,6 +8,7 @@ EXCLUDED_FIELDS = {
     "database_url",
     "database_pool_size",
     "database_max_overflow",
+    "redis_url",
     "host",
     "port",
     "log_level",

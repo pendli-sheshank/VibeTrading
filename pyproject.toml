@@ -23,6 +23,7 @@ dependencies = [
     "cryptography>=43.0",
     "fastapi-users[sqlalchemy]>=15.0",
     "slowapi>=0.1.9",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]

@@ -10,7 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from vibetrading.api.routers import backtest, monitor, risk, strategy, system, watchlist
-from vibetrading.api.websocket import run_event_forwarder, websocket_endpoint
+from vibetrading.api.websocket import websocket_endpoint
 from vibetrading.auth.backend import NotAuthenticated, current_active_user, current_dashboard_user
 from vibetrading.auth.routes import router as auth_router
 from vibetrading.dashboard.routes import router as dashboard_router
@@ -33,11 +33,10 @@ async def lifespan(app: FastAPI):
     manager.start_lease_loop()
     app.state.runtime_manager = manager
 
-    async with run_event_forwarder():
-        try:
-            yield
-        finally:
-            await manager.shutdown_all()
+    try:
+        yield
+    finally:
+        await manager.shutdown_all()
 
 
 async def _not_authenticated_handler(request: Request, exc: NotAuthenticated) -> Response:

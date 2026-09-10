@@ -51,7 +51,8 @@ async def set_kill_switch_endpoint(
     state = await set_kill_switch(session, user.id, active=payload.active, mode=payload.mode, reason=payload.reason)
     await session.commit()
     await event_bus.publish(
-        {"type": "kill_switch", "active": state.kill_switch_active, "mode": state.kill_switch_mode}
+        {"type": "kill_switch", "active": state.kill_switch_active, "mode": state.kill_switch_mode},
+        tenant_id=user.id,
     )
     return {"kill_switch_active": state.kill_switch_active, "kill_switch_mode": state.kill_switch_mode}
 

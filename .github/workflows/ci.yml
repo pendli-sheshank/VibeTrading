@@ -8,6 +8,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # Backs tests/unit/test_redis_bus.py's cross-worker fan-out coverage
+      # (Phase 21) -- those tests skip cleanly without it, but running them
+      # for real here is what actually proves the Redis pub/sub wiring
+      # works before merge, not just that it degrades gracefully without.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 

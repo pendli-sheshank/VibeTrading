@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     database_pool_size: int = 10
     database_max_overflow: int = 20
 
+    # --- Cross-worker realtime fan-out (Redis) -----------------------------
+    # None (the default) means "in-process fan-out only" -- every existing
+    # dev/test path and the single-process deployment model both work with
+    # zero Redis dependency. Set only when running >1 API/worker replica,
+    # so a WebSocket connected to one replica sees events published by a
+    # scheduler running in another.
+    redis_url: str | None = None
+
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True
     agent_interval_research_sec: int = 900
