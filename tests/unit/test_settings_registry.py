@@ -6,6 +6,8 @@ from vibetrading.settings.registry import SECTIONS, SETTINGS_REGISTRY, fields_in
 
 EXCLUDED_FIELDS = {
     "database_url",
+    "database_pool_size",
+    "database_max_overflow",
     "host",
     "port",
     "log_level",

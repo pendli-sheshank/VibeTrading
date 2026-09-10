@@ -55,7 +55,7 @@ class AgentRunORM(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     agent_type: Mapped[str] = mapped_column(String(32), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     confidence: Mapped[float] = mapped_column(Float)
     summary: Mapped[str] = mapped_column(String)
     raw_data: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -68,7 +68,7 @@ class SignalORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     source: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(16))
     confidence: Mapped[float] = mapped_column(Float)
@@ -79,7 +79,7 @@ class SignalORM(Base):
     reference_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Realized outcome, filled in later by the performance tracker.
     realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
-    realized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    realized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OrderORM(Base):
@@ -97,7 +97,7 @@ class OrderORM(Base):
     mode: Mapped[str] = mapped_column(String(8))
     filled_quantity: Mapped[int] = mapped_column(Integer, default=0)
     filled_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     raw_response: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -113,7 +113,7 @@ class PositionORM(Base):
     unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     stop_loss_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    opened_at: Mapped[datetime] = mapped_column(DateTime)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AuditLogORM(Base):
@@ -129,7 +129,7 @@ class AuditLogORM(Base):
     risk_checks_passed: Mapped[dict] = mapped_column(JSON, default=dict)
     mode: Mapped[str] = mapped_column(String(8))
     status: Mapped[str] = mapped_column(String(32), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class RiskEventORM(Base):
@@ -143,7 +143,7 @@ class RiskEventORM(Base):
     rule_name: Mapped[str] = mapped_column(String(64), index=True)
     passed: Mapped[bool] = mapped_column(Boolean)
     reason: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class RiskStateORM(Base):
@@ -161,7 +161,7 @@ class RiskStateORM(Base):
     kill_switch_mode: Mapped[str] = mapped_column(String(32), default="halt_new_orders")
     daily_realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     daily_pnl_date: Mapped[str] = mapped_column(String(10))  # ISO date, e.g. "2025-01-31"
-    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
@@ -171,14 +171,14 @@ class BacktestRunORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
-    start_date: Mapped[datetime] = mapped_column(DateTime)
-    end_date: Mapped[datetime] = mapped_column(DateTime)
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     total_trades: Mapped[int] = mapped_column(Integer)
     win_rate: Mapped[float] = mapped_column(Float)
     total_pnl: Mapped[float] = mapped_column(Float)
     max_drawdown: Mapped[float] = mapped_column(Float)
     trades: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SettingORM(Base):
@@ -195,4 +195,4 @@ class SettingORM(Base):
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -21,5 +21,46 @@ jobs:
       - name: Lint
         run: ruff check vibetrading/ tests/ scripts/
 
-      - name: Test
+      - name: Test (SQLite, fast unit/integration tier)
+        run: pytest
+
+  test-postgres:
+    # A second full run of the same suite against a real Postgres service
+    # container -- SQLite doesn't enforce foreign keys or distinguish
+    # timezone-aware from naive timestamps by default, so issues in either
+    # area (see the tenant_id FKs and the DateTime(timezone=True) columns)
+    # only surface here, not in the SQLite tier above. Catches Postgres/
+    # migration dialect drift before merge, per Phase 19's DoD.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vibetrading
+          POSTGRES_PASSWORD: vibetrading
+          POSTGRES_DB: vibetrading_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://vibetrading:vibetrading@localhost:5432/vibetrading_test
+      DATABASE_URL: postgresql+asyncpg://vibetrading:vibetrading@localhost:5432/vibetrading_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Alembic upgrade head against clean Postgres
+        run: alembic upgrade head
+
+      - name: Test (Postgres tier)
         run: pytest

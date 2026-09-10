@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests.conftest import make_test_engine, reset_schema
 from vibetrading.api.app import app
 from vibetrading.api.deps import get_broker, get_db, get_runtime
 from vibetrading.broker.mock_client import MockBrokerClient
-from vibetrading.persistence.orm_models import Base
 
 
 class _FakeRuntime:
@@ -28,11 +27,8 @@ async def auth_client():
     """Unlike the other dashboard-route fixtures, this one does NOT override
     current_active_user/current_dashboard_user -- these tests exercise the
     real register/login/logout flow end-to-end."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    engine = make_test_engine()
+    await reset_schema(engine)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 

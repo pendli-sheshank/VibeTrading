@@ -58,6 +58,8 @@ class Settings(BaseSettings):
 
     # --- Database --------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./vibetrading.db"
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
 
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True

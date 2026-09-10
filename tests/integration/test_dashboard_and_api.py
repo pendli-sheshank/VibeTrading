@@ -5,16 +5,16 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests.conftest import make_test_engine, reset_schema, seed_test_users
 from vibetrading.api.app import app
 from vibetrading.api.deps import get_broker, get_db
 from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, SignalSource
 from vibetrading.core.models import Signal, Stock
-from vibetrading.persistence.orm_models import Base, UserORM
+from vibetrading.persistence.orm_models import UserORM
 from vibetrading.risk.engine import RiskEngine
 
 FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
@@ -22,11 +22,9 @@ FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_acti
 
 @pytest_asyncio.fixture
 async def api_client():
-    engine = create_async_engine(
-        "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    engine = make_test_engine()
+    await reset_schema(engine)
+    await seed_test_users(engine)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 

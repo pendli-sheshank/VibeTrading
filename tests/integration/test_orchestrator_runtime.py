@@ -4,13 +4,12 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests.conftest import make_test_engine, reset_schema, seed_test_users
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.config import Settings
 from vibetrading.orchestrator.runtime import OrchestratorRuntime
-from vibetrading.persistence.orm_models import Base
 from vibetrading.settings.cache import get_tenant_settings
 from vibetrading.settings.service import save_settings
 
@@ -19,11 +18,9 @@ TENANT_ID = 1
 
 @pytest.fixture
 async def test_engine():
-    engine = create_async_engine(
-        "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    engine = make_test_engine()
+    await reset_schema(engine)
+    await seed_test_users(engine)
     yield engine
     await engine.dispose()
 
