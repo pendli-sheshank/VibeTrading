@@ -21,6 +21,10 @@ from vibetrading.observability.metrics import circuit_breaker_opens_total, circu
 
 logger = logging.getLogger(__name__)
 
+# Strong references for _record_circuit_open()'s fire-and-forget alert
+# tasks -- see the comment at its call site below.
+_pending_alert_tasks: set[asyncio.Task] = set()
+
 
 def _record_circuit_open(name: str) -> None:
     circuit_breaker_opens_total.labels(kind=circuit_kind(name)).inc()
@@ -38,7 +42,15 @@ def _record_circuit_open(name: str) -> None:
         # lack of an event loop.
         return
     message = f"Circuit breaker '{name}' opened after repeated failures."
-    asyncio.create_task(send_alert(message))
+    # A Task with no reference held anywhere but the event loop's own
+    # internal bookkeeping is eligible for GC mid-execution (a documented
+    # asyncio pitfall -- see asyncio.create_task's own docs on this). Hold
+    # a strong reference in this module-level set until it finishes, so a
+    # real alert can't be silently dropped by a GC pass that happens to
+    # land before the webhook POST inside send_alert() completes.
+    task = asyncio.create_task(send_alert(message))
+    _pending_alert_tasks.add(task)
+    task.add_done_callback(_pending_alert_tasks.discard)
 
 
 T = TypeVar("T")

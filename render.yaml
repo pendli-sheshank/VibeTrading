@@ -41,12 +41,23 @@ services:
           type: keyvalue
           name: vibetrading-redis
           property: connectionString
+      # APP_SECRETS_KEY, AUTH_SECRET_KEY, and RISK_TOKEN_SECRET must be the
+      # SAME value on both this service and vibetrading-worker below --
+      # they share one Postgres database, and APP_SECRETS_KEY in particular
+      # decrypts tenant secrets (Dhan tokens, LLM keys) that whichever
+      # service encrypted them. generateValue: true generates an
+      # independent value PER SERVICE, which would silently desync them
+      # (the worker would fail to decrypt what the web service encrypted,
+      # falling back to defaults with only a log line to notice by) --
+      # sync: false on both instead, set to the same operator-chosen value
+      # in the Render dashboard after this blueprint is applied. Generate
+      # one with `python -c "import secrets; print(secrets.token_hex(32))"`.
       - key: APP_SECRETS_KEY
-        generateValue: true
+        sync: false
       - key: AUTH_SECRET_KEY
-        generateValue: true
+        sync: false
       - key: RISK_TOKEN_SECRET
-        generateValue: true
+        sync: false
       - key: AUTH_COOKIE_SECURE
         value: "true"
       - key: VIBETRADING_EXECUTION_MODE
@@ -75,6 +86,8 @@ services:
           type: keyvalue
           name: vibetrading-redis
           property: connectionString
+      # Must match vibetrading-web's APP_SECRETS_KEY / AUTH_SECRET_KEY /
+      # RISK_TOKEN_SECRET exactly -- see that service's comment above.
       - key: APP_SECRETS_KEY
         sync: false
       - key: AUTH_SECRET_KEY

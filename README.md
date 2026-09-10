@@ -404,6 +404,19 @@ templated there — Dhan credentials are per-tenant, set from each account's
 own `/settings`) — that's a deliberate action to take when you're ready,
 not something this repo does on its own.
 
+**`APP_SECRETS_KEY`, `AUTH_SECRET_KEY`, and `RISK_TOKEN_SECRET` must be set
+to the identical value on both services.** They're `sync: false` in
+`render.yaml` (not `generateValue: true`) specifically because that
+generates an independent value *per service* — and `APP_SECRETS_KEY` in
+particular decrypts tenant secrets in the one Postgres database both
+services share, so a Web Service replica and the Background Worker with
+different values means the worker silently fails to decrypt what the web
+service encrypted (falls back to defaults, logs a WARNING, keeps running —
+see Known limitations). Generate each once
+(`python -c "import secrets; print(secrets.token_hex(32))"`) and paste the
+same value into both services' environment in the Render dashboard after
+applying this blueprint.
+
 ## Observability
 
 - **`/healthz`** — pure liveness, no dependencies. A DB outage should show
@@ -507,13 +520,21 @@ realtime fan-out, reliability/observability hardening, and CI/CD/deployment
 
 ## Known limitations
 
-- **`APP_SECRETS_KEY` rotation orphans stored secrets.** Every secret saved
-  through the Settings UI (Dhan access token, LLM keys, data-source
-  credentials) is encrypted with this key. Changing it after secrets have
-  been stored makes them undecryptable — the app falls back to their
-  class defaults (effectively "not set") until you re-enter them from
-  `/settings`. Set a real value before storing anything you care about;
-  don't change it afterward without expecting to re-enter every secret.
+- **A wrong `APP_SECRETS_KEY` orphans stored secrets silently.** Every
+  secret saved through the Settings UI (Dhan access token, LLM keys,
+  data-source credentials) is encrypted with this key. Any process that
+  reads them back with a *different* key — whether because you rotated it,
+  or (in a multi-service deployment) the Web Service and Background Worker
+  were given different values — gets an undecryptable value: the app falls
+  back to that field's class default (effectively "not set") and logs one
+  WARNING per affected field, rather than failing loudly. `/settings` on
+  the process with the *wrong* key will still show the field as
+  "configured" (it doesn't know its own key is wrong), which is exactly
+  why `render.yaml` deliberately makes `APP_SECRETS_KEY` an operator-set,
+  identical-on-every-service value rather than a per-service generated
+  one — see Deployment above. Set a real value before storing anything you
+  care about; don't change it afterward without expecting to re-enter
+  every secret on every service.
 - **A freshly registered account seeds a default watchlist**
   (RELIANCE/TCS/INFY, no Dhan security IDs) and paper mode with the
   built-in secrets/token defaults — both editable immediately from

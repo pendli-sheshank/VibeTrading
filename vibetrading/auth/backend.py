@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from fastapi import Depends, WebSocket, WebSocketException, status
+from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
 from fastapi_users.manager import BaseUserManager
@@ -38,7 +38,7 @@ auth_backend = AuthenticationBackend(
 
 fastapi_users = FastAPIUsers[UserORM, int](get_user_manager, [auth_backend])
 
-# The raw fastapi-users-built dependencies. Wrapped below (current_active_user,
+# The raw fastapi-users-built dependency. Wrapped below (current_active_user,
 # current_dashboard_user) so every authenticated request gets its tenant_id
 # bound into logging_conf's contextvar for the request's whole duration --
 # every log line downstream (agents, risk engine, broker calls) is then
@@ -47,12 +47,29 @@ fastapi_users = FastAPIUsers[UserORM, int](get_user_manager, [auth_backend])
 # the wrapper (the same object every route's Depends() uses), so overriding
 # current_active_user with a fake user still works exactly as before --
 # it just bypasses the tenant_id binding too, which no test needs.
-_current_active_user_raw = fastapi_users.current_user(active=True)
+#
+# Both wrappers below share this ONE optional-variant callable rather than
+# current_active_user building on its own separate non-optional
+# fastapi_users.current_user(active=True) dependency. api/deps.py's
+# get_runtime()/get_broker()/get_risk_engine() depend on current_active_user
+# internally, and several dashboard routes ALSO declare their own
+# Depends(current_dashboard_user) alongside Depends(get_runtime) -- if the
+# two wrappers depended on two distinct fastapi_users-generated callables,
+# FastAPI's per-callable dependency cache couldn't dedupe them, and such a
+# request would decode the session JWT and hit the DB for the same user
+# twice. Sharing this one callable means whichever wrapper resolves first
+# is cached and reused by the other, at the cost of current_active_user
+# manually raising the 401 fastapi_users' own non-optional variant would
+# have (see _authenticate() in fastapi_users' authenticator.py: an
+# active=True failure always maps to 401, never 403 -- reproduced exactly
+# here, not approximated).
 _current_user_optional = fastapi_users.current_user(active=True, optional=True)
 
 
-async def current_active_user(user: UserORM = Depends(_current_active_user_raw)) -> AsyncIterator[UserORM]:
+async def current_active_user(user: UserORM | None = Depends(_current_user_optional)) -> AsyncIterator[UserORM]:
     """For pure API/JSON consumers: raises a 401 JSON response when unauthenticated."""
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     with bind_tenant_id(user.id):
         yield user
 
