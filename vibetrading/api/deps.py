@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from functools import lru_cache
 
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.broker.base import BrokerClient
-from vibetrading.broker.factory import get_broker_client
 from vibetrading.persistence.db import get_session
 from vibetrading.risk.engine import RiskEngine
 
@@ -16,13 +15,14 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-@lru_cache
-def get_broker() -> BrokerClient:
-    """One broker instance per process — MockBrokerClient's in-memory
-    positions/funds need to be shared across requests to behave sensibly.
+def get_broker(request: Request) -> BrokerClient:
+    """Reads the current broker from OrchestratorRuntime (app.state.runtime)
+    rather than caching its own instance — so a settings change that
+    rebuilds the broker (e.g. flipping to live, or new Dhan credentials) is
+    immediately visible to every request, not stuck on a stale cached one.
     """
-    return get_broker_client()
+    return request.app.state.runtime.broker
 
 
-def get_risk_engine() -> RiskEngine:
-    return RiskEngine(broker=get_broker())
+def get_risk_engine(broker: BrokerClient = Depends(get_broker)) -> RiskEngine:
+    return RiskEngine(broker=broker)

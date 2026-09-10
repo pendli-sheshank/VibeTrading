@@ -8,44 +8,35 @@ from fastapi.staticfiles import StaticFiles
 
 from vibetrading.api.routers import backtest, monitor, risk, strategy, system, watchlist
 from vibetrading.api.websocket import run_event_forwarder, websocket_endpoint
-from vibetrading.broker.factory import get_broker_client
-from vibetrading.config import get_settings
 from vibetrading.dashboard.routes import router as dashboard_router
 from vibetrading.logging_conf import configure_logging
-from vibetrading.orchestrator.scheduler import build_scheduler
+from vibetrading.orchestrator.runtime import OrchestratorRuntime
 from vibetrading.persistence.db import get_session, init_db
 from vibetrading.persistence.repositories import seed_default_watchlist_if_empty
+from vibetrading.settings.service import load_settings_from_db
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "static"
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # NOTE: this inline broker/scheduler construction is a temporary stopgap
-    # for Phase 11 (watchlist DB migration) so the app keeps booting — Phase
-    # 12 replaces it with OrchestratorRuntime (start/restart/shutdown),
-    # stashed on app.state, so settings changes can rebuild the broker and
-    # scheduler without a process restart.
     configure_logging()
     await init_db()
 
     async with get_session() as session:
+        await load_settings_from_db(session)
         await seed_default_watchlist_if_empty(session)
         await session.commit()
 
-    settings = get_settings()
-    scheduler = None
-    if settings.enable_scheduler:
-        broker = get_broker_client(settings)
-        scheduler = await build_scheduler(broker, settings)
-        scheduler.start()
+    runtime = OrchestratorRuntime()
+    await runtime.start()
+    app.state.runtime = runtime
 
     async with run_event_forwarder():
         try:
             yield
         finally:
-            if scheduler is not None:
-                scheduler.shutdown()
+            await runtime.shutdown()
 
 
 def create_app() -> FastAPI:
