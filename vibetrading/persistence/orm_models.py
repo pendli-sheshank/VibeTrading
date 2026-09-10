@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -143,3 +143,18 @@ class BacktestRunORM(Base):
     max_drawdown: Mapped[float] = mapped_column(Float)
     trades: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class SettingORM(Base):
+    """One row per UI-editable application setting (see vibetrading/settings/).
+    A key-value table rather than one column per field, so adding a future
+    setting never needs a migration. `value` is JSON-encoded for plain
+    values, or Fernet ciphertext (see settings/crypto.py) when is_secret.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)

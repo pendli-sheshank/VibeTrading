@@ -13,6 +13,7 @@ from vibetrading.persistence.orm_models import (
     BacktestRunORM,
     OrderORM,
     RiskEventORM,
+    SettingORM,
     SignalORM,
     StockORM,
 )
@@ -168,3 +169,30 @@ async def list_recent_risk_events(session: AsyncSession, limit: int = 50) -> lis
     stmt = select(RiskEventORM).order_by(RiskEventORM.timestamp.desc()).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def list_app_settings(session: AsyncSession) -> list[SettingORM]:
+    result = await session.execute(select(SettingORM))
+    return list(result.scalars().all())
+
+
+async def get_app_setting(session: AsyncSession, key: str) -> SettingORM | None:
+    return await session.get(SettingORM, key)
+
+
+async def upsert_app_setting(session: AsyncSession, key: str, value: str, is_secret: bool) -> SettingORM:
+    row = await session.get(SettingORM, key)
+    if row is None:
+        row = SettingORM(key=key, value=value, is_secret=is_secret, updated_at=datetime.now(UTC))
+        session.add(row)
+    else:
+        row.value = value
+        row.is_secret = is_secret
+        row.updated_at = datetime.now(UTC)
+    return row
+
+
+async def delete_app_setting(session: AsyncSession, key: str) -> None:
+    row = await session.get(SettingORM, key)
+    if row is not None:
+        await session.delete(row)

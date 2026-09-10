@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    # Encrypts secret values stored in the app_settings table (Dhan token,
+    # LLM keys, etc — see vibetrading/settings/crypto.py). Stays env-only
+    # deliberately: you need this key to decrypt anything in the DB, so it
+    # can't itself live in the DB. MUST be overridden before real use, same
+    # as risk_token_secret — rotating it orphans previously-stored secrets.
+    app_secrets_key: str = "dev-insecure-key-change-me"
+
     @field_validator("watchlist")
     @classmethod
     def _non_empty_watchlist(cls, v: str) -> str:
