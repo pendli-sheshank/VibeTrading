@@ -93,7 +93,7 @@ class SpyBroker(BrokerClient):
 
 async def test_audit_log_written_before_broker_call(db_session):
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
 
@@ -105,7 +105,7 @@ async def test_audit_log_written_before_broker_call(db_session):
 
 async def test_rejected_signal_never_reaches_broker(db_session):
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config(min_signal_confidence=0.99))
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config(min_signal_confidence=0.99))
 
     result = await engine.approve_and_execute(db_session, make_signal(confidence=0.5), STOCK)
 
@@ -117,7 +117,7 @@ async def test_rejected_signal_never_reaches_broker(db_session):
 
 async def test_hold_signal_skips_broker_and_is_approved_trivially(db_session):
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     result = await engine.approve_and_execute(db_session, make_signal(action=ActionType.HOLD), STOCK)
 
@@ -127,11 +127,11 @@ async def test_hold_signal_skips_broker_and_is_approved_trivially(db_session):
 
 
 async def test_kill_switch_blocks_new_order_end_to_end(db_session):
-    await set_kill_switch(db_session, active=True, mode=KillSwitchMode.HALT_NEW_ORDERS)
+    await set_kill_switch(db_session, 1, active=True, mode=KillSwitchMode.HALT_NEW_ORDERS)
     await db_session.flush()
 
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
 
@@ -141,11 +141,11 @@ async def test_kill_switch_blocks_new_order_end_to_end(db_session):
 
 
 async def test_kill_switch_halt_new_orders_still_allows_stop_loss_exit(db_session):
-    await set_kill_switch(db_session, active=True, mode=KillSwitchMode.HALT_NEW_ORDERS)
+    await set_kill_switch(db_session, 1, active=True, mode=KillSwitchMode.HALT_NEW_ORDERS)
     await db_session.flush()
 
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     exit_signal = make_signal(
         source=SignalSource.SYSTEM_STOP_LOSS, action=ActionType.SELL, confidence=0.0, suggested_quantity=10
@@ -158,7 +158,7 @@ async def test_kill_switch_halt_new_orders_still_allows_stop_loss_exit(db_sessio
 
 async def test_daily_loss_circuit_breaker_trips_after_realized_loss(db_session):
     broker = MockBrokerClient(seed=1, initial_funds=1_000_000.0)
-    engine = RiskEngine(broker=broker, config=make_config(max_daily_loss_inr=100.0))
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config(max_daily_loss_inr=100.0))
 
     # Open a long position...
     buy_signal = make_signal(action=ActionType.BUY, reference_price=100.0, suggested_quantity=10)
@@ -169,7 +169,7 @@ async def test_daily_loss_circuit_breaker_trips_after_realized_loss(db_session):
     # at its own synthetic LTP, so force a large loss via a big quantity/price
     # assumption isn't reliable — instead directly record a large loss to
     # deterministically exercise the breaker-persists behavior).
-    await record_realized_pnl(db_session, -150.0)
+    await record_realized_pnl(db_session, 1, -150.0)
     await db_session.flush()
 
     blocked_signal = make_signal(action=ActionType.BUY, reference_price=100.0)
@@ -181,12 +181,12 @@ async def test_daily_loss_circuit_breaker_trips_after_realized_loss(db_session):
 
 async def test_realized_pnl_from_order_result_updates_risk_state(db_session):
     broker = SpyBrokerWithLoss(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     await engine.approve_and_execute(db_session, make_signal(), STOCK)
     await db_session.flush()
 
-    state = await get_or_create_risk_state(db_session)
+    state = await get_or_create_risk_state(db_session, 1)
     assert state.daily_realized_pnl == pytest.approx(-500.0)
 
 
@@ -205,7 +205,7 @@ class SpyBrokerWithLoss(SpyBroker):
 
 async def test_successful_order_persists_order_row(db_session):
     broker = SpyBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
     await db_session.flush()
@@ -235,7 +235,7 @@ class ExplodingBroker(SpyBroker):
 
 async def test_broker_failure_marks_audit_entry_failed_and_propagates(db_session):
     broker = ExplodingBroker(db_session)
-    engine = RiskEngine(broker=broker, config=make_config())
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
 
     with pytest.raises(ConnectionError):
         await engine.approve_and_execute(db_session, make_signal(), STOCK)

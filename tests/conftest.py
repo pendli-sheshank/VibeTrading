@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from vibetrading.config import get_settings
 from vibetrading.persistence.orm_models import Base
 from vibetrading.rate_limit import limiter
+from vibetrading.settings.cache import reset_tenant_settings_cache
 
 
 @pytest_asyncio.fixture
@@ -35,6 +36,17 @@ def _reset_global_settings():
     yield
     for key, value in snapshot.items():
         setattr(settings, key, value)
+
+
+@pytest.fixture(autouse=True)
+def _reset_tenant_settings():
+    """settings/cache.py's per-tenant Settings cache is process-wide for the
+    whole test session (mirrors the old single-tenant singleton's mutate-
+    in-place design, just keyed by tenant_id now) -- clear it between every
+    test so one test's saved settings for tenant N never leak into another
+    test that reuses the same tenant_id."""
+    yield
+    reset_tenant_settings_cache()
 
 
 @pytest.fixture(autouse=True)

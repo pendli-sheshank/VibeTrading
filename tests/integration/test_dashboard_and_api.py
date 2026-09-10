@@ -55,7 +55,7 @@ async def test_kill_switch_endpoint_blocks_next_risk_engine_call(api_client):
     assert response.status_code == 200
     assert response.json()["kill_switch_active"] is True
 
-    engine = RiskEngine(broker=broker)
+    engine = RiskEngine(broker=broker, tenant_id=FAKE_USER.id)
     signal = Signal(
         stock_symbol="TCS",
         timestamp=datetime.now(UTC),
@@ -81,7 +81,7 @@ async def test_dashboard_kill_switch_toggle_flips_state_and_next_call_rejected(a
     assert response.status_code == 200
     assert "ACTIVE" in response.text
 
-    engine = RiskEngine(broker=broker)
+    engine = RiskEngine(broker=broker, tenant_id=FAKE_USER.id)
     signal = Signal(
         stock_symbol="INFY",
         timestamp=datetime.now(UTC),

@@ -21,14 +21,14 @@ async def test_backtest_agent_persists_result(db_session):
     end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=60)
 
-    result = await backtest_agent.run_and_persist(db_session, stock, start_date, end_date)
+    result = await backtest_agent.run_and_persist(db_session, 1, stock, start_date, end_date)
     await db_session.commit()
 
-    runs = await list_backtest_runs_for_stock(db_session, "RELIANCE")
+    runs = await list_backtest_runs_for_stock(db_session, 1, "RELIANCE")
     assert len(runs) == 1
     assert runs[0].stock_symbol == "RELIANCE"
     assert runs[0].total_trades == result.total_trades
 
-    fetched = await get_backtest_run(db_session, runs[0].id)
+    fetched = await get_backtest_run(db_session, 1, runs[0].id)
     assert fetched is not None
     assert fetched.win_rate == result.win_rate

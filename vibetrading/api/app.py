@@ -16,11 +16,9 @@ from vibetrading.auth.routes import router as auth_router
 from vibetrading.dashboard.routes import router as dashboard_router
 from vibetrading.dashboard.routes_settings import router as settings_router
 from vibetrading.logging_conf import configure_logging
-from vibetrading.orchestrator.runtime import OrchestratorRuntime
-from vibetrading.persistence.db import get_session, init_db
-from vibetrading.persistence.repositories import seed_default_watchlist_if_empty
+from vibetrading.orchestrator.manager import MultiTenantRuntimeManager
+from vibetrading.persistence.db import init_db
 from vibetrading.rate_limit import limiter
-from vibetrading.settings.service import load_settings_from_db
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "static"
 
@@ -30,20 +28,15 @@ async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
 
-    async with get_session() as session:
-        await load_settings_from_db(session)
-        await seed_default_watchlist_if_empty(session)
-        await session.commit()
-
-    runtime = OrchestratorRuntime()
-    await runtime.start()
-    app.state.runtime = runtime
+    manager = MultiTenantRuntimeManager()
+    await manager.start_all_existing_tenants()
+    app.state.runtime_manager = manager
 
     async with run_event_forwarder():
         try:
             yield
         finally:
-            await runtime.shutdown()
+            await manager.shutdown_all()
 
 
 async def _not_authenticated_handler(request: Request, exc: NotAuthenticated) -> Response:

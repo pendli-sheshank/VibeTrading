@@ -20,10 +20,10 @@ async def test_technical_agent_produces_and_persists_agent_output(db_session):
     assert output.summary
     assert "rsi_14" in output.raw_data
 
-    await save_agent_output(db_session, output)
+    await save_agent_output(db_session, 1, output)
     await db_session.commit()
 
-    persisted = await get_latest_agent_output(db_session, "RELIANCE", AgentType.TECHNICAL.value)
+    persisted = await get_latest_agent_output(db_session, 1, "RELIANCE", AgentType.TECHNICAL.value)
     assert persisted is not None
     assert persisted.stock_symbol == "RELIANCE"
     assert persisted.summary == output.summary

@@ -21,7 +21,7 @@ async def test_paper_mode_accelerated_cycles_accumulate_rows_and_publish_events(
     """
     settings = Settings(_env_file=None, risk_min_signal_confidence=0.1)
     broker = MockBrokerClient(seed=1)
-    scheduler = OrchestratorScheduler(broker=broker, watchlist=[Stock(symbol="TCS")], settings=settings)
+    scheduler = OrchestratorScheduler(broker=broker, tenant_id=1, watchlist=[Stock(symbol="TCS")], settings=settings)
 
     # Force a deterministic BUY every cycle so the pipeline actually reaches
     # the Risk Agent and places real (paper) orders, independent of the
@@ -71,7 +71,7 @@ async def test_paper_mode_accelerated_cycles_accumulate_rows_and_publish_events(
 async def test_paper_mode_strategy_cycle_skips_when_no_technical_output_yet(db_session):
     settings = Settings(_env_file=None)
     broker = MockBrokerClient(seed=2)
-    scheduler = OrchestratorScheduler(broker=broker, watchlist=[Stock(symbol="INFY")], settings=settings)
+    scheduler = OrchestratorScheduler(broker=broker, tenant_id=1, watchlist=[Stock(symbol="INFY")], settings=settings)
     stock = Stock(symbol="INFY")
 
     # No research/technical cycle has run yet for this stock.

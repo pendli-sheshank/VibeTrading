@@ -9,9 +9,9 @@ from vibetrading.api.app import app
 from vibetrading.api.deps import get_db, get_runtime
 from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
-from vibetrading.config import get_settings
 from vibetrading.persistence.orm_models import Base, UserORM
 from vibetrading.persistence.repositories import get_app_setting
+from vibetrading.settings.cache import get_tenant_settings
 
 FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
 
@@ -70,15 +70,16 @@ async def settings_client():
 async def test_settings_page_renders_all_sections_and_masks_secrets(settings_client):
     client, _, _ = settings_client
 
+    await client.post("/settings/save/execution_broker", data={"dhan_access_token": "test-token"})
+
     response = await client.get("/settings")
     assert response.status_code == 200
     body = response.text
     for heading in ["Execution &amp; Broker", "Watchlist", "LLM", "Risk Limits", "Data Sources"]:
         assert heading in body
 
-    # risk_token_secret has a non-empty class default -> must show as
-    # "configured", never the actual default string.
-    assert "dev-insecure-secret-change-me" not in body
+    # A saved secret must render masked, never the actual stored value.
+    assert "test-token" not in body
     assert "•••• (configured)" in body
 
 
@@ -87,7 +88,7 @@ async def test_live_without_confirmation_returns_400_and_leaves_mode_unchanged(s
 
     response = await client.post("/settings/execution-mode/live")
     assert response.status_code == 400
-    assert get_settings().vibetrading_execution_mode.value == "paper"
+    assert get_tenant_settings(FAKE_USER.id).vibetrading_execution_mode.value == "paper"
     assert runtime.restart_calls == 0
 
 
@@ -96,7 +97,7 @@ async def test_live_with_confirmation_switches_mode_and_restarts(settings_client
 
     response = await client.post("/settings/execution-mode/live", data={"confirm_live": "yes"})
     assert response.status_code == 200
-    assert get_settings().vibetrading_execution_mode.value == "live"
+    assert get_tenant_settings(FAKE_USER.id).vibetrading_execution_mode.value == "live"
     assert runtime.restart_calls == 1
 
 
@@ -107,7 +108,7 @@ async def test_switching_back_to_paper_needs_no_confirmation(settings_client):
     response = await client.post("/settings/execution-mode/paper")
 
     assert response.status_code == 200
-    assert get_settings().vibetrading_execution_mode.value == "paper"
+    assert get_tenant_settings(FAKE_USER.id).vibetrading_execution_mode.value == "paper"
     assert runtime.restart_calls == 2
 
 
@@ -126,12 +127,12 @@ async def test_saving_execution_broker_section_persists_and_restarts(settings_cl
         },
     )
     assert response.status_code == 200
-    assert get_settings().dhan_client_id == "test-client"
-    assert get_settings().dhan_access_token == "test-token"
+    assert get_tenant_settings(FAKE_USER.id).dhan_client_id == "test-client"
+    assert get_tenant_settings(FAKE_USER.id).dhan_access_token == "test-token"
     assert runtime.restart_calls == 1
 
     async with session_factory() as session:
-        row = await get_app_setting(session, "dhan_access_token")
+        row = await get_app_setting(session, FAKE_USER.id, "dhan_access_token")
         assert row is not None
         assert row.is_secret is True
         assert row.value != "test-token"  # encrypted at rest
@@ -153,7 +154,7 @@ async def test_saving_risk_limits_section_does_not_restart(settings_client):
         },
     )
     assert response.status_code == 200
-    assert get_settings().risk_max_position_size_inr == 75000.0
+    assert get_tenant_settings(FAKE_USER.id).risk_max_position_size_inr == 75000.0
     assert runtime.restart_calls == 0  # the whole point of the exemption
 
 
@@ -161,11 +162,11 @@ async def test_clearing_a_secret_via_checkbox_reverts_to_default(settings_client
     client, _, _ = settings_client
 
     await client.post("/settings/save/execution_broker", data={"dhan_access_token": "some-token"})
-    assert get_settings().dhan_access_token == "some-token"
+    assert get_tenant_settings(FAKE_USER.id).dhan_access_token == "some-token"
 
     response = await client.post("/settings/save/execution_broker", data={"clear__dhan_access_token": "on"})
     assert response.status_code == 200
-    assert get_settings().dhan_access_token == ""
+    assert get_tenant_settings(FAKE_USER.id).dhan_access_token == ""
 
 
 async def test_blank_secret_field_leaves_existing_credential_unchanged(settings_client):
@@ -174,7 +175,7 @@ async def test_blank_secret_field_leaves_existing_credential_unchanged(settings_
     await client.post("/settings/save/execution_broker", data={"dhan_access_token": "original-token"})
     await client.post("/settings/save/execution_broker", data={})
 
-    assert get_settings().dhan_access_token == "original-token"
+    assert get_tenant_settings(FAKE_USER.id).dhan_access_token == "original-token"
 
 
 async def test_watchlist_add_update_delete_round_trip_and_each_restarts(settings_client):
@@ -217,4 +218,4 @@ async def test_failed_restart_reports_502_but_keeps_the_already_saved_setting(se
     assert response.status_code == 502
     assert "couldn't be applied" in response.text
     # The save itself already committed -- only *applying* it failed.
-    assert get_settings().dhan_client_id == "test-client"
+    assert get_tenant_settings(FAKE_USER.id).dhan_client_id == "test-client"

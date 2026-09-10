@@ -5,15 +5,18 @@ import logging
 
 from vibetrading.broker.base import BrokerClient
 from vibetrading.broker.factory import get_broker_client
-from vibetrading.config import Settings, get_settings
+from vibetrading.config import Settings
 from vibetrading.orchestrator.scheduler import OrchestratorScheduler, build_scheduler
+from vibetrading.persistence.db import get_session
+from vibetrading.settings.cache import get_tenant_settings
 from vibetrading.settings.registry import fields_in_section
+from vibetrading.settings.service import load_settings_from_db
 
 logger = logging.getLogger(__name__)
 
 
 class OrchestratorRuntime:
-    """Owns the process's current broker + OrchestratorScheduler and can
+    """Owns one tenant's current broker + OrchestratorScheduler and can
     rebuild both on demand — e.g. after a settings change to execution
     mode, Dhan credentials, watchlist, scheduling intervals, or LLM
     provider, all of which are "baked in" at construction time in ways
@@ -21,13 +24,15 @@ class OrchestratorRuntime:
     once, APScheduler jobs fix their interval at registration, agents
     capture a concrete LLMAdapter once).
 
-    Stashed on app.state.runtime (not a module-level singleton), so tests
-    can build isolated runtimes without process-global state leaking
-    between them.
+    One instance per tenant, held by orchestrator.manager.MultiTenantRuntimeManager
+    (see that module) rather than a module-level singleton, so tests can
+    build isolated runtimes without process-global state leaking between
+    them.
     """
 
-    def __init__(self, settings: Settings | None = None):
-        self._settings = settings or get_settings()
+    def __init__(self, tenant_id: int, settings: Settings | None = None):
+        self.tenant_id = tenant_id
+        self._settings = settings or get_tenant_settings(tenant_id)
         self._broker: BrokerClient | None = None
         self._scheduler: OrchestratorScheduler | None = None
         self._lock = asyncio.Lock()
@@ -44,6 +49,20 @@ class OrchestratorRuntime:
 
     async def start(self) -> None:
         async with self._lock:
+            # Only start() reloads from DB -- this tenant's very first
+            # build in this process needs it (get_tenant_settings() just
+            # constructs class defaults, it doesn't know about anything
+            # saved earlier). restart() deliberately does NOT reload here:
+            # every real restart() call is triggered right after
+            # save_settings() already refreshed self._settings from DB, so
+            # reloading again would be redundant at best -- and at worst
+            # would silently revert an in-memory-only settings mutation
+            # that was never meant to be persisted (this is also what
+            # keeps tests that poke `settings.some_field = ...` directly,
+            # without a full save_settings() round-trip, behaving as
+            # written).
+            async with get_session() as session:
+                await load_settings_from_db(session, self.tenant_id, self._settings)
             self._broker, self._scheduler = await self._build()
             if self._scheduler is not None:
                 self._scheduler.start()
@@ -92,7 +111,7 @@ class OrchestratorRuntime:
         broker = get_broker_client(self._settings)
         scheduler = None
         if self._settings.enable_scheduler:
-            scheduler = await build_scheduler(broker, self._settings)
+            scheduler = await build_scheduler(broker, self.tenant_id, self._settings)
         return broker, scheduler
 
     async def _shutdown_locked(self) -> None:

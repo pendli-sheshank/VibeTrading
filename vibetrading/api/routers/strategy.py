@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.strategy.performance_tracker import get_performance_summary
 from vibetrading.api.deps import get_db
+from vibetrading.auth.backend import current_active_user
 from vibetrading.core.enums import AgentType
+from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import get_latest_agent_output, list_signals_for_stock
 
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
@@ -35,12 +37,14 @@ def _signal_dict(signal) -> dict:
 
 
 @router.get("/{symbol}")
-async def get_strategy_detail(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
+async def get_strategy_detail(
+    symbol: str, session: AsyncSession = Depends(get_db), user: UserORM = Depends(current_active_user)
+) -> dict:
     symbol = symbol.upper()
-    technical = await get_latest_agent_output(session, symbol, AgentType.TECHNICAL.value)
-    research = await get_latest_agent_output(session, symbol, AgentType.RESEARCH.value)
-    signals = await list_signals_for_stock(session, symbol)
-    performance = await get_performance_summary(session, symbol)
+    technical = await get_latest_agent_output(session, user.id, symbol, AgentType.TECHNICAL.value)
+    research = await get_latest_agent_output(session, user.id, symbol, AgentType.RESEARCH.value)
+    signals = await list_signals_for_stock(session, user.id, symbol)
+    performance = await get_performance_summary(session, user.id, symbol)
 
     return {
         "symbol": symbol,

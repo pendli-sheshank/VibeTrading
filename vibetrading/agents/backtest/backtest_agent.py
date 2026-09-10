@@ -22,11 +22,12 @@ class BacktestAgent:
     async def run_and_persist(
         self,
         session: AsyncSession,
+        tenant_id: int,
         stock: Stock,
         start_date: datetime,
         end_date: datetime,
         warmup_days: int = 90,
     ) -> BacktestResult:
         result = await self.engine.run(stock, start_date, end_date, warmup_days=warmup_days)
-        await save_backtest_run(session, result)
+        await save_backtest_run(session, tenant_id, result)
         return result

@@ -18,9 +18,19 @@ from vibetrading.persistence.orm_models import (
     StockORM,
 )
 
+# --------------------------------------------------------------------------
+# Tenant scoping: every function below takes `tenant_id` as its first
+# argument (after `session`) and filters every query by it -- this is the
+# primary tenant-isolation mechanism (see the multi-tenant plan's "Multi-
+# tenant data model" section). There is no way to call these functions
+# without specifying whose data you mean.
+# --------------------------------------------------------------------------
 
-async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
-    result = await session.execute(select(StockORM).where(StockORM.symbol == stock.symbol))
+
+async def upsert_stock(session: AsyncSession, tenant_id: int, stock: Stock) -> StockORM:
+    result = await session.execute(
+        select(StockORM).where(StockORM.tenant_id == tenant_id, StockORM.symbol == stock.symbol)
+    )
     existing = result.scalar_one_or_none()
     if existing:
         existing.exchange = stock.exchange
@@ -30,6 +40,7 @@ async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
         return existing
 
     orm_stock = StockORM(
+        tenant_id=tenant_id,
         symbol=stock.symbol,
         exchange=stock.exchange,
         dhan_security_id=stock.dhan_security_id,
@@ -40,18 +51,20 @@ async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
     return orm_stock
 
 
-async def get_stock_by_symbol(session: AsyncSession, symbol: str) -> StockORM | None:
-    result = await session.execute(select(StockORM).where(StockORM.symbol == symbol.upper()))
+async def get_stock_by_symbol(session: AsyncSession, tenant_id: int, symbol: str) -> StockORM | None:
+    result = await session.execute(
+        select(StockORM).where(StockORM.tenant_id == tenant_id, StockORM.symbol == symbol.upper())
+    )
     return result.scalar_one_or_none()
 
 
-async def list_stocks(session: AsyncSession) -> list[StockORM]:
-    result = await session.execute(select(StockORM))
+async def list_stocks(session: AsyncSession, tenant_id: int) -> list[StockORM]:
+    result = await session.execute(select(StockORM).where(StockORM.tenant_id == tenant_id))
     return list(result.scalars().all())
 
 
-async def delete_stock(session: AsyncSession, symbol: str) -> bool:
-    stock = await get_stock_by_symbol(session, symbol)
+async def delete_stock(session: AsyncSession, tenant_id: int, symbol: str) -> bool:
+    stock = await get_stock_by_symbol(session, tenant_id, symbol)
     if stock is None:
         return False
     await session.delete(stock)
@@ -61,19 +74,20 @@ async def delete_stock(session: AsyncSession, symbol: str) -> bool:
 DEFAULT_WATCHLIST_STOCKS: list[Stock] = [Stock(symbol="RELIANCE"), Stock(symbol="TCS"), Stock(symbol="INFY")]
 
 
-async def seed_default_watchlist_if_empty(session: AsyncSession) -> None:
-    """Fresh installs get a usable watchlist with zero configuration — real
-    live trading still needs a Dhan security ID added per stock via
-    Settings before DhanBrokerClient can place an order for it, but paper
-    mode works immediately."""
-    if await list_stocks(session):
+async def seed_default_watchlist_if_empty(session: AsyncSession, tenant_id: int) -> None:
+    """A freshly-registered tenant gets a usable watchlist with zero
+    configuration — real live trading still needs a Dhan security ID added
+    per stock via Settings before DhanBrokerClient can place an order for
+    it, but paper mode works immediately."""
+    if await list_stocks(session, tenant_id):
         return
     for stock in DEFAULT_WATCHLIST_STOCKS:
-        await upsert_stock(session, stock)
+        await upsert_stock(session, tenant_id, stock)
 
 
-async def save_agent_output(session: AsyncSession, output: AgentOutput) -> AgentRunORM:
+async def save_agent_output(session: AsyncSession, tenant_id: int, output: AgentOutput) -> AgentRunORM:
     orm_output = AgentRunORM(
+        tenant_id=tenant_id,
         agent_type=output.agent_type.value,
         stock_symbol=output.stock_symbol,
         timestamp=output.timestamp,
@@ -86,11 +100,15 @@ async def save_agent_output(session: AsyncSession, output: AgentOutput) -> Agent
 
 
 async def get_latest_agent_output(
-    session: AsyncSession, stock_symbol: str, agent_type: str
+    session: AsyncSession, tenant_id: int, stock_symbol: str, agent_type: str
 ) -> AgentRunORM | None:
     result = await session.execute(
         select(AgentRunORM)
-        .where(AgentRunORM.stock_symbol == stock_symbol, AgentRunORM.agent_type == agent_type)
+        .where(
+            AgentRunORM.tenant_id == tenant_id,
+            AgentRunORM.stock_symbol == stock_symbol,
+            AgentRunORM.agent_type == agent_type,
+        )
         .order_by(AgentRunORM.timestamp.desc())
         .limit(1)
     )
@@ -113,8 +131,9 @@ def agent_output_from_orm(orm: AgentRunORM) -> AgentOutput:
     )
 
 
-async def save_signal(session: AsyncSession, signal: Signal) -> SignalORM:
+async def save_signal(session: AsyncSession, tenant_id: int, signal: Signal) -> SignalORM:
     orm_signal = SignalORM(
+        tenant_id=tenant_id,
         stock_symbol=signal.stock_symbol,
         timestamp=signal.timestamp,
         source=signal.source.value,
@@ -130,14 +149,17 @@ async def save_signal(session: AsyncSession, signal: Signal) -> SignalORM:
     return orm_signal
 
 
-async def get_signal(session: AsyncSession, signal_id: int) -> SignalORM | None:
-    return await session.get(SignalORM, signal_id)
+async def get_signal(session: AsyncSession, tenant_id: int, signal_id: int) -> SignalORM | None:
+    result = await session.execute(
+        select(SignalORM).where(SignalORM.tenant_id == tenant_id, SignalORM.id == signal_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def list_signals_for_stock(
-    session: AsyncSession, stock_symbol: str, only_realized: bool = False
+    session: AsyncSession, tenant_id: int, stock_symbol: str, only_realized: bool = False
 ) -> list[SignalORM]:
-    stmt = select(SignalORM).where(SignalORM.stock_symbol == stock_symbol)
+    stmt = select(SignalORM).where(SignalORM.tenant_id == tenant_id, SignalORM.stock_symbol == stock_symbol)
     if only_realized:
         stmt = stmt.where(SignalORM.realized_pnl.is_not(None))
     stmt = stmt.order_by(SignalORM.timestamp.desc())
@@ -145,8 +167,9 @@ async def list_signals_for_stock(
     return list(result.scalars().all())
 
 
-async def save_backtest_run(session: AsyncSession, result: BacktestResult) -> BacktestRunORM:
+async def save_backtest_run(session: AsyncSession, tenant_id: int, result: BacktestResult) -> BacktestRunORM:
     orm_run = BacktestRunORM(
+        tenant_id=tenant_id,
         stock_symbol=result.stock_symbol,
         start_date=result.start_date,
         end_date=result.end_date,
@@ -161,51 +184,73 @@ async def save_backtest_run(session: AsyncSession, result: BacktestResult) -> Ba
     return orm_run
 
 
-async def get_backtest_run(session: AsyncSession, run_id: int) -> BacktestRunORM | None:
-    return await session.get(BacktestRunORM, run_id)
+async def get_backtest_run(session: AsyncSession, tenant_id: int, run_id: int) -> BacktestRunORM | None:
+    result = await session.execute(
+        select(BacktestRunORM).where(BacktestRunORM.tenant_id == tenant_id, BacktestRunORM.id == run_id)
+    )
+    return result.scalar_one_or_none()
 
 
-async def list_backtest_runs_for_stock(session: AsyncSession, stock_symbol: str) -> list[BacktestRunORM]:
+async def list_backtest_runs_for_stock(
+    session: AsyncSession, tenant_id: int, stock_symbol: str
+) -> list[BacktestRunORM]:
     stmt = (
         select(BacktestRunORM)
-        .where(BacktestRunORM.stock_symbol == stock_symbol)
+        .where(BacktestRunORM.tenant_id == tenant_id, BacktestRunORM.stock_symbol == stock_symbol)
         .order_by(BacktestRunORM.created_at.desc())
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def list_recent_orders(session: AsyncSession, limit: int = 50) -> list[OrderORM]:
-    stmt = select(OrderORM).order_by(OrderORM.timestamp.desc()).limit(limit)
+async def list_recent_orders(session: AsyncSession, tenant_id: int, limit: int = 50) -> list[OrderORM]:
+    stmt = (
+        select(OrderORM)
+        .where(OrderORM.tenant_id == tenant_id)
+        .order_by(OrderORM.timestamp.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def list_recent_audit_log(session: AsyncSession, limit: int = 50) -> list[AuditLogORM]:
-    stmt = select(AuditLogORM).order_by(AuditLogORM.timestamp.desc()).limit(limit)
+async def list_recent_audit_log(session: AsyncSession, tenant_id: int, limit: int = 50) -> list[AuditLogORM]:
+    stmt = (
+        select(AuditLogORM)
+        .where(AuditLogORM.tenant_id == tenant_id)
+        .order_by(AuditLogORM.timestamp.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def list_recent_risk_events(session: AsyncSession, limit: int = 50) -> list[RiskEventORM]:
-    stmt = select(RiskEventORM).order_by(RiskEventORM.timestamp.desc()).limit(limit)
+async def list_recent_risk_events(session: AsyncSession, tenant_id: int, limit: int = 50) -> list[RiskEventORM]:
+    stmt = (
+        select(RiskEventORM)
+        .where(RiskEventORM.tenant_id == tenant_id)
+        .order_by(RiskEventORM.timestamp.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def list_app_settings(session: AsyncSession) -> list[SettingORM]:
-    result = await session.execute(select(SettingORM))
+async def list_app_settings(session: AsyncSession, tenant_id: int) -> list[SettingORM]:
+    result = await session.execute(select(SettingORM).where(SettingORM.tenant_id == tenant_id))
     return list(result.scalars().all())
 
 
-async def get_app_setting(session: AsyncSession, key: str) -> SettingORM | None:
-    return await session.get(SettingORM, key)
+async def get_app_setting(session: AsyncSession, tenant_id: int, key: str) -> SettingORM | None:
+    return await session.get(SettingORM, {"tenant_id": tenant_id, "key": key})
 
 
-async def upsert_app_setting(session: AsyncSession, key: str, value: str, is_secret: bool) -> SettingORM:
-    row = await session.get(SettingORM, key)
+async def upsert_app_setting(
+    session: AsyncSession, tenant_id: int, key: str, value: str, is_secret: bool
+) -> SettingORM:
+    row = await session.get(SettingORM, {"tenant_id": tenant_id, "key": key})
     if row is None:
-        row = SettingORM(key=key, value=value, is_secret=is_secret, updated_at=datetime.now(UTC))
+        row = SettingORM(tenant_id=tenant_id, key=key, value=value, is_secret=is_secret, updated_at=datetime.now(UTC))
         session.add(row)
     else:
         row.value = value
@@ -214,7 +259,7 @@ async def upsert_app_setting(session: AsyncSession, key: str, value: str, is_sec
     return row
 
 
-async def delete_app_setting(session: AsyncSession, key: str) -> None:
-    row = await session.get(SettingORM, key)
+async def delete_app_setting(session: AsyncSession, tenant_id: int, key: str) -> None:
+    row = await session.get(SettingORM, {"tenant_id": tenant_id, "key": key})
     if row is not None:
         await session.delete(row)

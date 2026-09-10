@@ -37,8 +37,8 @@ async def reconcile_signal_performance(
     return signal
 
 
-async def get_performance_summary(session: AsyncSession, stock_symbol: str) -> dict:
-    signals = await list_signals_for_stock(session, stock_symbol, only_realized=True)
+async def get_performance_summary(session: AsyncSession, tenant_id: int, stock_symbol: str) -> dict:
+    signals = await list_signals_for_stock(session, tenant_id, stock_symbol, only_realized=True)
     if not signals:
         return {"stock_symbol": stock_symbol, "total_signals": 0, "win_rate": None, "total_pnl": 0.0}
 

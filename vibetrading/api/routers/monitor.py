@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.api.deps import get_broker, get_db
+from vibetrading.auth.backend import current_active_user
 from vibetrading.broker.base import BrokerClient
+from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import list_recent_audit_log, list_recent_orders
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -23,8 +25,10 @@ async def get_funds(broker: BrokerClient = Depends(get_broker)) -> dict:
 
 
 @router.get("/orders")
-async def get_orders(limit: int = 50, session: AsyncSession = Depends(get_db)) -> list[dict]:
-    orders = await list_recent_orders(session, limit=limit)
+async def get_orders(
+    limit: int = 50, session: AsyncSession = Depends(get_db), user: UserORM = Depends(current_active_user)
+) -> list[dict]:
+    orders = await list_recent_orders(session, user.id, limit=limit)
     return [
         {
             "order_id": o.order_id,
@@ -43,8 +47,10 @@ async def get_orders(limit: int = 50, session: AsyncSession = Depends(get_db)) -
 
 
 @router.get("/audit-log")
-async def get_audit_log(limit: int = 50, session: AsyncSession = Depends(get_db)) -> list[dict]:
-    entries = await list_recent_audit_log(session, limit=limit)
+async def get_audit_log(
+    limit: int = 50, session: AsyncSession = Depends(get_db), user: UserORM = Depends(current_active_user)
+) -> list[dict]:
+    entries = await list_recent_audit_log(session, user.id, limit=limit)
     return [
         {
             "id": e.id,

@@ -51,13 +51,13 @@ async def test_build_scheduler_resolves_watchlist_from_db_and_registers_jobs(
     original live-trading gap where no security ID was ever populated."""
     session_factory = patch_orchestrator_db_session
     async with session_factory() as session:
-        await upsert_stock(session, Stock(symbol="RELIANCE", dhan_security_id="2885"))
-        await upsert_stock(session, Stock(symbol="TCS"))
+        await upsert_stock(session, 1, Stock(symbol="RELIANCE", dhan_security_id="2885"))
+        await upsert_stock(session, 1, Stock(symbol="TCS"))
         await session.commit()
 
     broker = MockBrokerClient(seed=1)
     settings = Settings(_env_file=None)
-    scheduler = await build_scheduler(broker, settings)
+    scheduler = await build_scheduler(broker, 1, settings)
 
     watchlist_symbols = {s.symbol for s in scheduler.watchlist}
     assert watchlist_symbols == {"RELIANCE", "TCS"}
@@ -79,7 +79,7 @@ async def test_build_scheduler_resolves_watchlist_from_db_and_registers_jobs(
 
 async def test_build_scheduler_empty_watchlist_registers_no_stock_jobs(test_engine, patch_orchestrator_db_session):
     broker = MockBrokerClient(seed=1)
-    scheduler = await build_scheduler(broker, Settings(_env_file=None))
+    scheduler = await build_scheduler(broker, 1, Settings(_env_file=None))
 
     assert scheduler.watchlist == []
 

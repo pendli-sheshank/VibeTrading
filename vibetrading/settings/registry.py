@@ -9,8 +9,14 @@ from vibetrading.core.enums import ExecutionMode
 SECTIONS: tuple[str, ...] = ("execution_broker", "llm", "risk_limits", "data_sources")
 
 # Fields intentionally NOT in the registry (never DB-backed via this system):
-#   database_url, host, port, log_level, app_secrets_key — infra, needed
-#     before DB access exists.
+#   database_url, host, port, log_level, app_secrets_key, auth_secret_key,
+#     auth_cookie_secure — infra, needed before DB access (or any tenant)
+#     exists.
+#   risk_token_secret — platform-wide, not per-tenant: it only proves an
+#     order's RiskApprovalToken was minted by THIS platform's RiskEngine
+#     (see risk/tokens.py), not a tenant secret, so there's no reason to
+#     pay the multi-tenant-settings complexity tax on it. Env-only, same as
+#     app_secrets_key.
 #   watchlist — superseded by the `stocks` table (see orchestrator/watchlist.py).
 #   vibetrading_kill_switch, vibetrading_kill_switch_mode — already have a
 #     live, authoritative home in RiskStateORM (edited via /risk/kill-switch);
@@ -68,7 +74,6 @@ _EXECUTION_BROKER_FIELDS = [
         choices=[m.value for m in ExecutionMode],
         help_text="Live places real orders with no per-trade approval. Switching to live requires explicit confirmation.",
     ),
-    _field("risk_token_secret", "execution_broker", str, secret=True, label="Risk approval token secret"),
     _field("dhan_client_id", "execution_broker", str, label="Dhan client ID"),
     _field("dhan_access_token", "execution_broker", str, secret=True, label="Dhan access token"),
     _field("enable_scheduler", "execution_broker", bool, label="Run the orchestrator scheduler"),

@@ -5,8 +5,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from vibetrading.agents.base import Agent
-from vibetrading.agents.research.chat_collector import ChatCollectorAgent
-from vibetrading.agents.research.news_collector import NewsCollectorAgent
+from vibetrading.agents.research.chat_collector import ChatCollectorAgent, default_chat_sources
+from vibetrading.agents.research.news_collector import NewsCollectorAgent, default_news_source
+from vibetrading.config import Settings
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import AgentOutput, Stock
 from vibetrading.llm.base import LLMAdapter, Message
@@ -40,9 +41,10 @@ class ResearchAgent(Agent):
         news_agent: NewsCollectorAgent | None = None,
         chat_agent: ChatCollectorAgent | None = None,
         llm: LLMAdapter | None = None,
+        settings: Settings | None = None,
     ):
-        self.news_agent = news_agent or NewsCollectorAgent()
-        self.chat_agent = chat_agent or ChatCollectorAgent()
+        self.news_agent = news_agent or NewsCollectorAgent(source=default_news_source(settings))
+        self.chat_agent = chat_agent or ChatCollectorAgent(sources=default_chat_sources(settings))
         self.llm = llm or MockLLMAdapter()
 
     async def analyze(self, stock: Stock, context: dict[str, Any]) -> AgentOutput:

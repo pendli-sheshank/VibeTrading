@@ -40,7 +40,7 @@ def make_config(**overrides) -> RiskConfig:
 
 def make_risk_state(**overrides) -> RiskStateORM:
     defaults = dict(
-        id=1,
+        tenant_id=1,
         kill_switch_active=False,
         kill_switch_mode=KillSwitchMode.HALT_NEW_ORDERS.value,
         daily_realized_pnl=0.0,

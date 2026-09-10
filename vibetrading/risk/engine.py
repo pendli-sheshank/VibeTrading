@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.broker.base import BrokerClient
-from vibetrading.config import Settings, get_settings
+from vibetrading.config import Settings
 from vibetrading.core.enums import ActionType, OrderSide, OrderStatus
 from vibetrading.core.models import OrderRequest, OrderResult, RiskCheckResult, Signal, Stock
 from vibetrading.persistence.orm_models import AuditLogORM, OrderORM, RiskEventORM
@@ -14,6 +14,7 @@ from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.rules import DEFAULT_RULES, RiskContext, RiskRule
 from vibetrading.risk.state import get_or_create_risk_state, record_realized_pnl
 from vibetrading.risk.tokens import mint_token
+from vibetrading.settings.cache import get_tenant_settings
 
 _ACTION_TO_SIDE = {ActionType.BUY: OrderSide.BUY, ActionType.SELL: OrderSide.SELL}
 
@@ -36,20 +37,22 @@ class RiskEngine:
     def __init__(
         self,
         broker: BrokerClient,
+        tenant_id: int,
         rules: list[RiskRule] | None = None,
         config: RiskConfig | None = None,
         settings: Settings | None = None,
     ):
         self.broker = broker
+        self.tenant_id = tenant_id
         self.rules = rules if rules is not None else DEFAULT_RULES
         self._config_override = config
-        self._settings = settings or get_settings()
+        self._settings = settings or get_tenant_settings(tenant_id)
 
     async def approve_and_execute(
         self, session: AsyncSession, signal: Signal, stock: Stock, signal_id: int | None = None
     ) -> ExecutionResult:
         config = self._config_override or RiskConfig.from_settings(self._settings)
-        risk_state = await get_or_create_risk_state(session)
+        risk_state = await get_or_create_risk_state(session, self.tenant_id)
 
         positions = await self.broker.get_positions()
         funds = await self.broker.get_funds()
@@ -81,6 +84,7 @@ class RiskEngine:
         )
 
         audit = AuditLogORM(
+            tenant_id=self.tenant_id,
             order_id=None,
             signal_id=signal_id,
             contributing_agent_output_ids=signal.contributing_output_ids,
@@ -96,6 +100,7 @@ class RiskEngine:
             if not outcome.passed:
                 session.add(
                     RiskEventORM(
+                        tenant_id=self.tenant_id,
                         stock_symbol=stock.symbol,
                         rule_name=outcome.rule_name,
                         passed=False,
@@ -132,6 +137,7 @@ class RiskEngine:
 
         session.add(
             OrderORM(
+                tenant_id=self.tenant_id,
                 order_id=order_result.order_id,
                 broker_order_id=order_result.broker_order_id,
                 signal_id=signal_id,
@@ -148,6 +154,6 @@ class RiskEngine:
         )
 
         if order_result.realized_pnl:
-            await record_realized_pnl(session, order_result.realized_pnl)
+            await record_realized_pnl(session, self.tenant_id, order_result.realized_pnl)
 
         return ExecutionResult(approved=True, risk_check=risk_check, order_result=order_result, audit_log_id=audit.id)

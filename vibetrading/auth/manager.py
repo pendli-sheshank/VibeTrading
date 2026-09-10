@@ -8,9 +8,10 @@ from fastapi_users import BaseUserManager, IntegerIDMixin, exceptions
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vibetrading.api.deps import get_db
+from vibetrading.api.db_dep import get_db
 from vibetrading.config import get_settings
 from vibetrading.persistence.orm_models import UserORM
+from vibetrading.persistence.repositories import seed_default_watchlist_if_empty
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,14 @@ class UserManager(IntegerIDMixin, BaseUserManager[UserORM, int]):
 
     async def on_after_register(self, user: UserORM, request=None) -> None:
         logger.info("New account registered: user_id=%s", user.id)
+        # Reuse the same session user_db was constructed with (see
+        # get_user_db below) rather than opening a fresh one -- this is
+        # what keeps the dependency-override in tests (and, more subtly,
+        # a swapped database_url in production) effective for this
+        # follow-up write too.
+        session = self.user_db.session
+        await seed_default_watchlist_if_empty(session, user.id)
+        await session.commit()
 
 
 async def get_user_db(session: AsyncSession = Depends(get_db)) -> AsyncIterator[SQLAlchemyUserDatabase]:

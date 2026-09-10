@@ -3,7 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,9 +34,11 @@ class UserORM(SQLAlchemyBaseUserTable[int], Base):
 
 class StockORM(Base):
     __tablename__ = "stocks"
+    __table_args__ = (UniqueConstraint("tenant_id", "symbol", name="uq_stocks_tenant_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
     exchange: Mapped[str] = mapped_column(String(16), default="NSE")
     dhan_security_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -36,8 +49,10 @@ class AgentRunORM(Base):
     """Persisted AgentOutput — one row per Research/Technical agent run."""
 
     __tablename__ = "agent_runs"
+    __table_args__ = (Index("ix_agent_runs_tenant_stock", "tenant_id", "stock_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     agent_type: Mapped[str] = mapped_column(String(32), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -48,8 +63,10 @@ class AgentRunORM(Base):
 
 class SignalORM(Base):
     __tablename__ = "signals"
+    __table_args__ = (Index("ix_signals_tenant_stock", "tenant_id", "stock_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
     source: Mapped[str] = mapped_column(String(32))
@@ -69,6 +86,7 @@ class OrderORM(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     order_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), nullable=True)
@@ -85,9 +103,11 @@ class OrderORM(Base):
 
 class PositionORM(Base):
     __tablename__ = "positions"
+    __table_args__ = (UniqueConstraint("tenant_id", "stock_symbol", name="uq_positions_tenant_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
     quantity: Mapped[int] = mapped_column(Integer)
     avg_price: Mapped[float] = mapped_column(Float)
     unrealized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
@@ -102,6 +122,7 @@ class AuditLogORM(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), nullable=True)
     contributing_agent_output_ids: Mapped[list] = mapped_column(JSON, default=list)
@@ -117,6 +138,7 @@ class RiskEventORM(Base):
     __tablename__ = "risk_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     stock_symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)
     rule_name: Mapped[str] = mapped_column(String(64), index=True)
     passed: Mapped[bool] = mapped_column(Boolean)
@@ -125,14 +147,16 @@ class RiskEventORM(Base):
 
 
 class RiskStateORM(Base):
-    """Single row (id=1) holding the live Risk Agent state: kill switch and
-    running daily realized P&L (reset when daily_pnl_date rolls over) — the
-    source of truth beyond the env-configured default once the app is running.
+    """One row per tenant holding that tenant's live Risk Agent state: kill
+    switch and running daily realized P&L (reset when daily_pnl_date rolls
+    over) — the source of truth beyond the env-configured default once the
+    app is running. `tenant_id` IS the primary key (no separate surrogate
+    `id` / singleton row) -- there is exactly one state row per tenant.
     """
 
     __tablename__ = "risk_state"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     kill_switch_active: Mapped[bool] = mapped_column(Boolean, default=False)
     kill_switch_mode: Mapped[str] = mapped_column(String(32), default="halt_new_orders")
     daily_realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
@@ -145,6 +169,7 @@ class BacktestRunORM(Base):
     __tablename__ = "backtest_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     stock_symbol: Mapped[str] = mapped_column(String(32), index=True)
     start_date: Mapped[datetime] = mapped_column(DateTime)
     end_date: Mapped[datetime] = mapped_column(DateTime)
@@ -157,14 +182,16 @@ class BacktestRunORM(Base):
 
 
 class SettingORM(Base):
-    """One row per UI-editable application setting (see vibetrading/settings/).
-    A key-value table rather than one column per field, so adding a future
-    setting never needs a migration. `value` is JSON-encoded for plain
-    values, or Fernet ciphertext (see settings/crypto.py) when is_secret.
+    """One row per tenant per UI-editable application setting (see
+    vibetrading/settings/). A key-value table rather than one column per
+    field, so adding a future setting never needs a migration. `value` is
+    JSON-encoded for plain values, or Fernet ciphertext (see
+    settings/crypto.py) when is_secret.
     """
 
     __tablename__ = "app_settings"
 
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
