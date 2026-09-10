@@ -117,3 +117,15 @@ async def test_registering_with_a_short_password_shows_error(auth_client):
 
     assert response.status_code == 400
     assert "at least 8 characters" in response.text
+
+
+async def test_registering_with_a_malformed_email_shows_a_clean_error(auth_client):
+    """Found via Phase 25 load testing: a malformed (or reserved-domain)
+    email used to raise an unhandled pydantic.ValidationError inside
+    UserCreate's own construction -- before either of the except clauses
+    above ever ran -- which surfaced as a raw 500 instead of the same
+    clean form re-render every other registration failure gets."""
+    response = await auth_client.post("/register", data={"email": "not-an-email", "password": "correct-horse"})
+
+    assert response.status_code == 400
+    assert "valid email" in response.text

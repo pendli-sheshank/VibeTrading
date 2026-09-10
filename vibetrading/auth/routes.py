@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import exceptions
+from pydantic import ValidationError as PydanticValidationError
 
 from vibetrading.auth.backend import (
     clear_session_cookie,
@@ -70,7 +71,22 @@ async def register_submit(
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
-        await user_manager.create(UserCreate(email=email, password=password))
+        user_create = UserCreate(email=email, password=password)
+    except PydanticValidationError:
+        # UserCreate's email field is pydantic's EmailStr -- a malformed
+        # address (or a syntactically valid one on a reserved/special-use
+        # domain) raises here, before user_manager.create() is even
+        # reached. Left uncaught, this was a raw unhandled exception (a
+        # 500 in production, or -- as an ASGI server with no exception
+        # handler installed for it sees it -- a torn-down connection with
+        # no response at all) instead of the same clean form re-render
+        # every other registration failure below gets.
+        return templates.TemplateResponse(
+            request, "register.html", {"error": "Enter a valid email address."}, status_code=400
+        )
+
+    try:
+        await user_manager.create(user_create)
     except exceptions.UserAlreadyExists:
         return templates.TemplateResponse(
             request, "register.html", {"error": "An account with that email already exists."}, status_code=400
