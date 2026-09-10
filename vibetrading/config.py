@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -75,6 +76,18 @@ class Settings(BaseSettings):
     # Slack incoming-webhook URL (or any endpoint accepting {"text": ...})
     # to also push a message there when a circuit breaker opens.
     alert_webhook_url: str | None = None
+
+    # --- Deployment topology -------------------------------------------------
+    # "all" (the default): this one process both serves the dashboard/API
+    # AND owns tenants' autonomous trading loops -- the single-service
+    # deployment model this app has always run as, and what every
+    # dev/test path assumes. Render's Web Service and Background Worker
+    # (see render.yaml) instead each set this explicitly: "web" replicas
+    # never compete for a tenant lease or run a scheduler (dashboard/API
+    # reads only); "worker" replicas own every tenant's lease/scheduler
+    # but serve no HTTP traffic. See orchestrator/manager.py's
+    # manage_leases and api/app.py's lifespan.
+    worker_role: Literal["all", "web", "worker"] = "all"
 
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True

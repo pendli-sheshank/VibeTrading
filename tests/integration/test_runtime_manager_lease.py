@@ -75,3 +75,54 @@ async def test_releasing_the_lease_lets_a_waiting_worker_take_over_on_its_next_r
     assert runtime_b.scheduler.risk_engine.fencing_token == 2  # takeover bumped the token
 
     await manager_b.shutdown_all()
+
+
+async def test_manage_leases_false_never_builds_a_scheduler_or_competes_for_the_lease(patched_db_session):
+    """The Web Service side of the plan's Web/Worker split (WORKER_ROLE=web,
+    see api/app.py) -- get_or_start() still returns a runtime with a
+    working broker (dashboard/API routes need that), but never attempts
+    lease acquisition and never runs a scheduler, regardless of whether
+    anyone else holds the lease."""
+    web_manager = MultiTenantRuntimeManager(worker_id="web-replica", manage_leases=False)
+    runtime = await web_manager.get_or_start(TENANT_ID)
+    try:
+        assert runtime.broker is not None
+        assert runtime.scheduler is None
+
+        from vibetrading.persistence.orm_models import TenantLeaseORM
+
+        async with patched_db_session() as session:
+            lease = await session.get(TenantLeaseORM, TENANT_ID)
+            assert lease is None  # never even attempted acquisition
+    finally:
+        await web_manager.shutdown_all()
+
+
+async def test_manage_leases_false_start_lease_loop_is_a_no_op(patched_db_session):
+    web_manager = MultiTenantRuntimeManager(worker_id="web-replica", manage_leases=False)
+    web_manager.start_lease_loop()
+    assert web_manager._lease_loop_task is None
+    await web_manager.shutdown_all()
+
+
+async def test_a_newly_registered_tenant_gets_picked_up_by_the_next_renewal_tick(patched_db_session):
+    """A standalone worker process (scripts/run_worker.py) never serves
+    HTTP requests, so nothing calls get_or_start() for a user who
+    registers after start_all_existing_tenants() already ran --
+    _discover_new_tenants() (run every renewal tick) is what catches up."""
+    from vibetrading.persistence.orm_models import UserORM
+
+    manager = MultiTenantRuntimeManager(worker_id="worker-a")
+    await manager.start_all_existing_tenants()
+    assert manager.get(TENANT_ID) is not None
+    assert manager.get(3) is None  # tenant 3 not registered yet (1 and 2 are seed_test_users() defaults)
+
+    session_factory = patched_db_session
+    async with session_factory() as session:
+        session.add(UserORM(id=3, email="new-tenant@example.com", hashed_password="x", is_active=True))
+        await session.commit()
+
+    await manager._discover_new_tenants()
+
+    assert manager.get(3) is not None
+    await manager.shutdown_all()

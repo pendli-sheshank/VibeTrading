@@ -10,6 +10,7 @@ EXCLUDED_FIELDS = {
     "database_max_overflow",
     "redis_url",
     "alert_webhook_url",
+    "worker_role",
     "host",
     "port",
     "log_level",

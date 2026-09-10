@@ -50,6 +50,16 @@ class MultiTenantRuntimeManager:
     safety guarantee is the fencing check inside approve_and_execute()'s
     own transaction, which rejects a stale worker's order attempt even if
     this loop somehow never got around to stopping its scheduler.
+
+    manage_leases=False (see config.py's worker_role / api/app.py) is the
+    Web Service side of the plan's Web/Worker split: a horizontally-scaled
+    replica that only ever needs read access to a tenant's broker for
+    dashboard/API routes (positions, funds, watchlist) has no business
+    competing for that tenant's lease at all -- get_or_start() still
+    builds a runtime (so those routes work), but never attempts
+    acquisition and never runs a scheduler, and start_lease_loop() is a
+    no-op. Only a manage_leases=True process (the Background Worker
+    service) ever owns a tenant's autonomous trading loop.
     """
 
     def __init__(
@@ -57,6 +67,7 @@ class MultiTenantRuntimeManager:
         renewal_interval_seconds: int = DEFAULT_RENEWAL_INTERVAL_SECONDS,
         lease_ttl_seconds: int = DEFAULT_LEASE_TTL_SECONDS,
         worker_id: str | None = None,
+        manage_leases: bool = True,
     ):
         self._runtimes: dict[int, OrchestratorRuntime] = {}
         self._lock = asyncio.Lock()
@@ -64,6 +75,7 @@ class MultiTenantRuntimeManager:
         self._renewal_interval_seconds = renewal_interval_seconds
         self._lease_ttl_seconds = lease_ttl_seconds
         self._lease_loop_task: asyncio.Task | None = None
+        self.manage_leases = manage_leases
 
     async def start_all_existing_tenants(self) -> None:
         """Called once from the app's lifespan: boots a runtime for every
@@ -88,8 +100,12 @@ class MultiTenantRuntimeManager:
             runtime = self._runtimes.get(tenant_id)
             if runtime is None:
                 runtime = OrchestratorRuntime(tenant_id=tenant_id)
-                held, fencing_token = await self._try_acquire(tenant_id)
-                await runtime.set_lease(held, fencing_token)
+                if self.manage_leases:
+                    held, fencing_token = await self._try_acquire(tenant_id)
+                    await runtime.set_lease(held, fencing_token)
+                else:
+                    await runtime.set_lease(False, None)
+                    held = False
                 await runtime.start()
                 self._runtimes[tenant_id] = runtime
                 logger.info(
@@ -103,7 +119,10 @@ class MultiTenantRuntimeManager:
     def start_lease_loop(self) -> None:
         """Starts the background acquire/renew loop as an asyncio task.
         Call once from the app's lifespan, after start_all_existing_tenants().
-        A no-op if already running."""
+        A no-op if already running, or if manage_leases=False (a Web
+        Service replica never owns a lease, so there's nothing to renew)."""
+        if not self.manage_leases:
+            return
         if self._lease_loop_task is None or self._lease_loop_task.done():
             self._lease_loop_task = asyncio.create_task(self._lease_loop())
 
@@ -111,11 +130,27 @@ class MultiTenantRuntimeManager:
         while True:
             try:
                 await asyncio.sleep(self._renewal_interval_seconds)
+                await self._discover_new_tenants()
                 await self._renew_all_leases()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Lease renewal loop iteration failed; will retry next interval.")
+
+    async def _discover_new_tenants(self) -> None:
+        """A manage_leases=True process (a standalone Background Worker,
+        scripts/run_worker.py, above all) never serves HTTP requests, so
+        nothing ever calls get_or_start() for a user who registers after
+        this process's own start_all_existing_tenants() sweep already
+        ran -- unlike a Web Service replica, where the very next dashboard
+        request from that user does. Re-scan for tenant ids this manager
+        doesn't have a runtime for yet on every renewal tick instead."""
+        async with get_session() as session:
+            result = await session.execute(select(UserORM.id))
+            tenant_ids = [row[0] for row in result.all()]
+        for tenant_id in tenant_ids:
+            if tenant_id not in self._runtimes:
+                await self.get_or_start(tenant_id)
 
     async def _renew_all_leases(self) -> None:
         tenant_ids = list(self._runtimes.keys())
@@ -149,7 +184,8 @@ class MultiTenantRuntimeManager:
         async with self._lock:
             for tenant_id, runtime in self._runtimes.items():
                 await runtime.shutdown()
-                async with get_session() as session:
-                    await release_lease(session, tenant_id, self.worker_id)
-                    await session.commit()
+                if self.manage_leases:
+                    async with get_session() as session:
+                        await release_lease(session, tenant_id, self.worker_id)
+                        await session.commit()
             self._runtimes.clear()

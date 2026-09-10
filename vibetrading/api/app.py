@@ -15,6 +15,7 @@ from vibetrading.api.routers import backtest, health, monitor, risk, strategy, s
 from vibetrading.api.websocket import websocket_endpoint
 from vibetrading.auth.backend import NotAuthenticated, current_active_user, current_dashboard_user
 from vibetrading.auth.routes import router as auth_router
+from vibetrading.config import get_settings
 from vibetrading.dashboard.routes import router as dashboard_router
 from vibetrading.dashboard.routes_settings import router as settings_router
 from vibetrading.logging_conf import bind_request_id, configure_logging
@@ -30,7 +31,15 @@ async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
 
-    manager = MultiTenantRuntimeManager()
+    # worker_role="web" (Render's Web Service, see render.yaml): this
+    # replica serves the dashboard/API only and never competes for a
+    # tenant's lease or runs its scheduler -- that's the Background
+    # Worker service's job (scripts/run_worker.py). Every other role
+    # ("all", the single-service dev/test default, and "worker" itself,
+    # which never even builds this FastAPI app -- see run_worker.py)
+    # manages leases normally.
+    manage_leases = get_settings().worker_role != "web"
+    manager = MultiTenantRuntimeManager(manage_leases=manage_leases)
     await manager.start_all_existing_tenants()
     manager.start_lease_loop()
     app.state.runtime_manager = manager
