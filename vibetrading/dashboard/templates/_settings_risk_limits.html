@@ -1,11 +1,13 @@
 {% import "_settings_field_macros.html" as macros %}
 <section class="card" id="settings-risk_limits">
   <h2>Risk Limits</h2>
-  <p class="muted">Changes here apply to the very next trade evaluation — no restart needed.</p>
+  <p class="settings-section-desc">Changes here apply to the very next trade evaluation — no restart needed.</p>
   <form hx-post="/settings/save/risk_limits" hx-target="#settings-risk_limits" hx-swap="outerHTML">
-    {% for field in sections.risk_limits %}
-      {{ macros.render_field(field, settings) }}
-    {% endfor %}
+    <div class="settings-grid">
+      {% for field in sections.risk_limits %}
+        {{ macros.render_field(field, settings) }}
+      {% endfor %}
+    </div>
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
 </section>
