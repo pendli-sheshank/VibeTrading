@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %} — Strategy{% endblock %}
+{% block content %}
+<h1>Strategy — Watchlist</h1>
+<p class="muted">Latest agent signal per stock. Click a symbol for the full Research/Technical breakdown.</p>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Symbol</th>
+      <th>Technical confidence</th>
+      <th>Research confidence</th>
+      <th>Latest signal</th>
+      <th>Signal confidence</th>
+      <th>When</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="/stock/{{ row.symbol }}">{{ row.symbol }}</a></td>
+      <td>{{ "%.0f%%" | format(row.technical.confidence * 100) if row.technical else "—" }}</td>
+      <td>{{ "%.0f%%" | format(row.research.confidence * 100) if row.research else "—" }}</td>
+      <td>
+        {% if row.signal %}
+          <span class="action-badge action-{{ row.signal.action }}">{{ row.signal.action | upper }}</span>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>{{ "%.0f%%" | format(row.signal.confidence * 100) if row.signal else "—" }}</td>
+      <td>{{ row.signal.timestamp.strftime("%Y-%m-%d %H:%M") if row.signal else "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No agent data yet. The orchestrator hasn't run any cycles.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

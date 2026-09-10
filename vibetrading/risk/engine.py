@@ -9,7 +9,7 @@ from vibetrading.broker.base import BrokerClient
 from vibetrading.config import Settings, get_settings
 from vibetrading.core.enums import ActionType, OrderSide, OrderStatus
 from vibetrading.core.models import OrderRequest, OrderResult, RiskCheckResult, Signal, Stock
-from vibetrading.persistence.orm_models import AuditLogORM, RiskEventORM
+from vibetrading.persistence.orm_models import AuditLogORM, OrderORM, RiskEventORM
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.rules import DEFAULT_RULES, RiskContext, RiskRule
 from vibetrading.risk.state import get_or_create_risk_state, record_realized_pnl
@@ -129,6 +129,23 @@ class RiskEngine:
 
         audit.order_id = order_result.order_id
         audit.status = order_result.status.value if order_result.status != OrderStatus.FILLED else "filled"
+
+        session.add(
+            OrderORM(
+                order_id=order_result.order_id,
+                broker_order_id=order_result.broker_order_id,
+                signal_id=signal_id,
+                stock_symbol=stock.symbol,
+                side=_ACTION_TO_SIDE[signal.action].value,
+                quantity=ctx.quantity,
+                status=order_result.status.value,
+                mode=self._settings.vibetrading_execution_mode.value,
+                filled_quantity=order_result.filled_quantity,
+                filled_price=order_result.filled_price,
+                timestamp=datetime.now(UTC),
+                raw_response=order_result.raw_response,
+            )
+        )
 
         if order_result.realized_pnl:
             await record_realized_pnl(session, order_result.realized_pnl)

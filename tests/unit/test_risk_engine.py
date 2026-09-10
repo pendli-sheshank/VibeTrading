@@ -10,7 +10,7 @@ from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, KillSwitchMode, OrderStatus, SignalSource
 from vibetrading.core.exceptions import InvalidRiskTokenError
 from vibetrading.core.models import FundsSnapshot, OrderRequest, OrderResult, Signal, Stock
-from vibetrading.persistence.orm_models import AuditLogORM
+from vibetrading.persistence.orm_models import AuditLogORM, OrderORM
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.engine import RiskEngine
 from vibetrading.risk.state import get_or_create_risk_state, record_realized_pnl, set_kill_switch
@@ -199,6 +199,20 @@ class SpyBrokerWithLoss(SpyBroker):
             filled_price=100.0,
             realized_pnl=-500.0,
         )
+
+
+async def test_successful_order_persists_order_row(db_session):
+    broker = SpyBroker(db_session)
+    engine = RiskEngine(broker=broker, config=make_config())
+
+    result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
+    await db_session.flush()
+
+    rows = (await db_session.execute(select(OrderORM))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].order_id == result.order_result.order_id
+    assert rows[0].stock_symbol == "TCS"
+    assert rows[0].status == "filled"
 
 
 async def test_place_order_rejects_missing_token():

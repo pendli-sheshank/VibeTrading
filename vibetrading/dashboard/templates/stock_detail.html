@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %} — {{ symbol }}{% endblock %}
+{% block content %}
+<p><a href="/">&larr; Watchlist</a></p>
+<h1>{{ symbol }}</h1>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Technical Agent</h2>
+    {% if technical %}
+      <p><strong>Confidence:</strong> {{ "%.0f%%" | format(technical.confidence * 100) }}</p>
+      <p>{{ technical.summary }}</p>
+      <table class="kv-table">
+        {% for key, value in technical.raw_data.items() %}
+        <tr><td>{{ key }}</td><td>{{ "%.2f" | format(value) if value is number else value }}</td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">No technical read yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Research Agent</h2>
+    {% if research %}
+      <p><strong>Confidence:</strong> {{ "%.0f%%" | format(research.confidence * 100) }}</p>
+      <p>{{ research.summary }}</p>
+    {% else %}
+      <p class="muted">No research read yet.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Performance</h2>
+  {% if performance.total_signals %}
+    <p>{{ performance.total_signals }} realized signal(s) · win rate
+      {{ "%.0f%%" | format(performance.win_rate * 100) if performance.win_rate is not none else "—" }}
+      · total P&amp;L {{ "%+.2f" | format(performance.total_pnl) }}</p>
+  {% else %}
+    <p class="muted">No realized signals yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Signal history</h2>
+  <table class="data-table">
+    <thead><tr><th>When</th><th>Action</th><th>Confidence</th><th>Reasoning</th><th>Realized P&amp;L</th></tr></thead>
+    <tbody>
+      {% for signal in signals %}
+      <tr>
+        <td>{{ signal.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><span class="action-badge action-{{ signal.action }}">{{ signal.action | upper }}</span></td>
+        <td>{{ "%.0f%%" | format(signal.confidence * 100) }}</td>
+        <td>{{ signal.reasoning }}</td>
+        <td>{{ "%+.2f" | format(signal.realized_pnl) if signal.realized_pnl is not none else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No signals yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

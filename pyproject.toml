@@ -49,4 +49,6 @@ target-version = "py311"
 [tool.ruff.lint]
 # C408: dict(...) + .update(overrides) is a deliberate test-fixture idiom
 # throughout tests/ for building override-able default kwargs.
-ignore = ["C408"]
+# B008: Depends(...)/Form(...) in argument defaults is required FastAPI
+# dependency-injection style, not a bug, throughout api/ and dashboard/.
+ignore = ["C408", "B008"]

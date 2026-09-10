@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %} — Risk{% endblock %}
+{% block content %}
+<h1>Risk</h1>
+
+{% include "_risk_panel.html" %}
+
+<section class="card">
+  <h2>Recent risk-rule rejections</h2>
+  <table class="data-table">
+    <thead><tr><th>When</th><th>Stock</th><th>Rule</th><th>Reason</th></tr></thead>
+    <tbody>
+      {% for event in events %}
+      <tr>
+        <td>{{ event.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ event.stock_symbol or "—" }}</td>
+        <td>{{ event.rule_name }}</td>
+        <td>{{ event.reason }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No risk-rule rejections recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

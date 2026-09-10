@@ -1,0 +1,29 @@
+<section class="card">
+  <h2>{{ result.stock_symbol }} — {{ result.start_date.strftime("%Y-%m-%d") }} to {{ result.end_date.strftime("%Y-%m-%d") }}</h2>
+  <table class="kv-table">
+    <tr><td>Total trades</td><td>{{ result.total_trades }}</td></tr>
+    <tr><td>Win rate</td><td>{{ "%.0f%%" | format(result.win_rate * 100) }}</td></tr>
+    <tr><td>Total P&amp;L</td><td>{{ "%+.2f" | format(result.total_pnl) }}</td></tr>
+    <tr><td>Max drawdown</td><td>{{ "%.2f" | format(result.max_drawdown) }}</td></tr>
+  </table>
+
+  {% if result.trades %}
+  <table class="data-table">
+    <thead><tr><th>Direction</th><th>Entry</th><th>Exit</th><th>Entry price</th><th>Exit price</th><th>P&amp;L</th></tr></thead>
+    <tbody>
+      {% for trade in result.trades %}
+      <tr>
+        <td>{{ trade.direction | upper }}</td>
+        <td>{{ trade.entry_timestamp.strftime("%Y-%m-%d") }}</td>
+        <td>{{ trade.exit_timestamp.strftime("%Y-%m-%d") if trade.exit_timestamp else "—" }}</td>
+        <td>{{ "%.2f" | format(trade.entry_price) }}</td>
+        <td>{{ "%.2f" | format(trade.exit_price) if trade.exit_price is not none else "—" }}</td>
+        <td>{{ "%+.2f" | format(trade.pnl) if trade.pnl is not none else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No trades triggered in this window.</p>
+  {% endif %}
+</section>

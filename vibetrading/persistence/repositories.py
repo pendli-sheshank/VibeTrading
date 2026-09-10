@@ -6,7 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.core.models import AgentOutput, BacktestResult, Signal, Stock
-from vibetrading.persistence.orm_models import AgentRunORM, BacktestRunORM, SignalORM, StockORM
+from vibetrading.persistence.orm_models import (
+    AgentRunORM,
+    AuditLogORM,
+    BacktestRunORM,
+    OrderORM,
+    RiskEventORM,
+    SignalORM,
+    StockORM,
+)
 
 
 async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
@@ -123,5 +131,23 @@ async def list_backtest_runs_for_stock(session: AsyncSession, stock_symbol: str)
         .where(BacktestRunORM.stock_symbol == stock_symbol)
         .order_by(BacktestRunORM.created_at.desc())
     )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_recent_orders(session: AsyncSession, limit: int = 50) -> list[OrderORM]:
+    stmt = select(OrderORM).order_by(OrderORM.timestamp.desc()).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_recent_audit_log(session: AsyncSession, limit: int = 50) -> list[AuditLogORM]:
+    stmt = select(AuditLogORM).order_by(AuditLogORM.timestamp.desc()).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_recent_risk_events(session: AsyncSession, limit: int = 50) -> list[RiskEventORM]:
+    stmt = select(RiskEventORM).order_by(RiskEventORM.timestamp.desc()).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())

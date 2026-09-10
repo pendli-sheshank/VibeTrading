@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %} — Backtest{% endblock %}
+{% block content %}
+<h1>Backtest</h1>
+<p class="muted">
+  Replays the exact same StrategyAgent logic used live over historical candles.
+  Only technical (price/volume) history exists for arbitrary past dates, so results
+  reflect the technical half of the strategy — live confidence also weighs Research.
+</p>
+
+<form hx-post="/backtest/run" hx-target="#backtest-result" hx-swap="innerHTML" class="inline-form">
+  <label>
+    Symbol
+    <select name="symbol">
+      {% for symbol in watchlist %}
+      <option value="{{ symbol }}">{{ symbol }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Days
+    <input type="number" name="days" value="180" min="30" max="1825" />
+  </label>
+  <button type="submit" class="btn btn-primary">Run backtest</button>
+</form>
+
+<div id="backtest-result">
+  {% if result %}{% include "_backtest_result.html" %}{% endif %}
+</div>
+{% endblock %}
