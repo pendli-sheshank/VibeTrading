@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -10,10 +10,17 @@ from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, KillSwitchMode, OrderStatus, SignalSource
 from vibetrading.core.exceptions import InvalidRiskTokenError
 from vibetrading.core.models import FundsSnapshot, OrderRequest, OrderResult, Signal, Stock
-from vibetrading.persistence.orm_models import AuditLogORM, OrderORM
+from vibetrading.orchestrator.lease import acquire_or_renew_lease
+from vibetrading.persistence.orm_models import (
+    AuditLogORM,
+    OrderORM,
+    TenantLeaseORM,
+    UsedRiskTokenORM,
+)
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.engine import RiskEngine
 from vibetrading.risk.state import get_or_create_risk_state, record_realized_pnl, set_kill_switch
+from vibetrading.risk.tokens import mint_token
 
 STOCK = Stock(symbol="TCS")
 
@@ -246,3 +253,79 @@ async def test_broker_failure_marks_audit_entry_failed_and_propagates(db_session
 
     order_rows = (await db_session.execute(select(OrderORM))).scalars().all()
     assert order_rows == []
+
+
+async def test_no_fencing_token_means_no_distributed_enforcement(db_session):
+    """The default (fencing_token=None) construction path -- every direct/
+    manual/test use of RiskEngine before and after Phase 20 -- must behave
+    exactly as before: no lease exists, no lease check runs, nothing about
+    approval changes."""
+    broker = SpyBroker(db_session)
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
+
+    result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
+
+    assert result.approved is True
+    assert broker.called is True
+
+
+async def test_a_matching_fencing_token_is_approved(db_session):
+    fencing_token = await acquire_or_renew_lease(db_session, 1, "worker-a")
+    await db_session.commit()
+
+    broker = SpyBroker(db_session)
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config(), fencing_token=fencing_token)
+
+    result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
+
+    assert result.approved is True
+    assert broker.called is True
+
+
+async def test_a_stale_fencing_token_is_rejected_before_touching_the_broker(db_session):
+    """The core distributed-safety proof: a worker whose fencing_token has
+    been superseded by another worker's takeover must never mint a token
+    or reach the broker, regardless of what the risk rules would otherwise
+    decide."""
+    stale_token = await acquire_or_renew_lease(db_session, 1, "worker-a")
+    await db_session.commit()
+
+    # worker-a's lease lapses; worker-b takes over, bumping the fencing token.
+    lease = await db_session.get(TenantLeaseORM, 1)
+    lease.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+    await acquire_or_renew_lease(db_session, 1, "worker-b")
+    await db_session.commit()
+
+    broker = SpyBroker(db_session)
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config(), fencing_token=stale_token)
+
+    result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
+
+    assert result.approved is False
+    assert result.risk_check.rule_results == {"lease_fencing": False}
+    assert broker.called is False
+
+    # Nothing was written -- not even an audit row -- for a cycle that
+    # never had a verified lease to act under.
+    assert (await db_session.execute(select(AuditLogORM))).scalars().all() == []
+
+
+async def test_a_replayed_token_id_is_rejected_before_touching_the_broker(db_session, monkeypatch):
+    """Defense-in-depth: even if a caller somehow got a previously-consumed
+    token_id back into approve_and_execute()'s path (not achievable via the
+    public API, since mint_token() always generates a fresh random id --
+    this proves the durable used_risk_tokens guard itself works)."""
+    token = mint_token(signal_id=None, stock_symbol=STOCK.symbol, quantity=1)
+    db_session.add(UsedRiskTokenORM(token_id=token.token_id, tenant_id=1, consumed_at=datetime.now(UTC)))
+    await db_session.commit()
+
+    monkeypatch.setattr("vibetrading.risk.engine.mint_token", lambda **kwargs: token)
+
+    broker = SpyBroker(db_session)
+    engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
+    result = await engine.approve_and_execute(db_session, make_signal(), STOCK)
+
+    assert result.approved is False
+    assert result.risk_check.rule_results == {"token_replay": False}
+    assert broker.called is False

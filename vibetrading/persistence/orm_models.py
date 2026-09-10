@@ -196,3 +196,38 @@ class SettingORM(Base):
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TenantLeaseORM(Base):
+    """One row per tenant, the durable primitive behind exactly-one-active-
+    scheduler-per-tenant across a worker fleet (see orchestrator/lease.py).
+    `fencing_token` increases by exactly 1 on every acquisition by a NEW
+    owner (never on a renewal by the same owner) -- a worker's copy of it
+    going stale is how a delayed/zombied worker's writes get rejected even
+    if it still believes it holds the lease.
+    """
+
+    __tablename__ = "tenant_leases"
+
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, default=0)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UsedRiskTokenORM(Base):
+    """Durable replay-protection record for a RiskApprovalToken, keyed by
+    the token's own id (see risk/tokens.py). Defense-in-depth alongside the
+    tenant_leases fencing check -- reserved eagerly, in the same
+    transaction as the order write, in RiskEngine.approve_and_execute()
+    itself (rather than at broker.place_order() time, which has no DB
+    session to persist against). A duplicate insert here raises an
+    IntegrityError the caller treats as "already consumed", surviving a
+    process restart unlike the in-memory set it complements."""
+
+    __tablename__ = "used_risk_tokens"
+
+    token_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    consumed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
 
     manager = MultiTenantRuntimeManager()
     await manager.start_all_existing_tenants()
+    manager.start_lease_loop()
     app.state.runtime_manager = manager
 
     async with run_event_forwarder():

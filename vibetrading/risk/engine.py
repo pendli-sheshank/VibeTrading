@@ -9,7 +9,8 @@ from vibetrading.broker.base import BrokerClient
 from vibetrading.config import Settings
 from vibetrading.core.enums import ActionType, OrderSide, OrderStatus
 from vibetrading.core.models import OrderRequest, OrderResult, RiskCheckResult, Signal, Stock
-from vibetrading.persistence.orm_models import AuditLogORM, OrderORM, RiskEventORM
+from vibetrading.orchestrator.lease import verify_lease
+from vibetrading.persistence.orm_models import AuditLogORM, OrderORM, RiskEventORM, UsedRiskTokenORM
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.rules import DEFAULT_RULES, RiskContext, RiskRule
 from vibetrading.risk.state import get_or_create_risk_state, record_realized_pnl
@@ -41,16 +42,42 @@ class RiskEngine:
         rules: list[RiskRule] | None = None,
         config: RiskConfig | None = None,
         settings: Settings | None = None,
+        fencing_token: int | None = None,
     ):
         self.broker = broker
         self.tenant_id = tenant_id
         self.rules = rules if rules is not None else DEFAULT_RULES
         self._config_override = config
         self._settings = settings or get_tenant_settings(tenant_id)
+        # Set only by the distributed scheduler path (see
+        # orchestrator/manager.py) -- a worker's proof, as of when it last
+        # acquired/renewed this tenant's lease, that it's the sole active
+        # owner. None (the default, and every direct/manual/test
+        # construction of RiskEngine) means "no distributed enforcement,"
+        # matching this class's single-process behavior before Phase 20.
+        self.fencing_token = fencing_token
 
     async def approve_and_execute(
         self, session: AsyncSession, signal: Signal, stock: Stock, signal_id: int | None = None
     ) -> ExecutionResult:
+        if self.fencing_token is not None and not await verify_lease(session, self.tenant_id, self.fencing_token):
+            # Never mint a token or touch risk state on a lease this worker
+            # no longer (verifiably) owns -- worst case is a skipped cycle,
+            # never a duplicate order from two workers racing.
+            return ExecutionResult(
+                approved=False,
+                risk_check=RiskCheckResult(
+                    approved=False,
+                    rule_results={"lease_fencing": False},
+                    reasons=[
+                        (
+                            "lease_fencing: this worker's tenant lease is stale or lost; cycle skipped to "
+                            "avoid a duplicate order from another worker."
+                        )
+                    ],
+                ),
+            )
+
         config = self._config_override or RiskConfig.from_settings(self._settings)
         risk_state = await get_or_create_risk_state(session, self.tenant_id)
 
@@ -118,6 +145,26 @@ class RiskEngine:
             return ExecutionResult(approved=False, risk_check=risk_check, order_result=None, audit_log_id=audit.id)
 
         token = mint_token(signal_id=signal_id, stock_symbol=stock.symbol, quantity=ctx.quantity)
+
+        # Durable replay-protection record, reserved before any broker call
+        # -- token_id is a fresh 128-bit random value each mint, so this is
+        # practically always None; a hit here (defense-in-depth alongside
+        # the lease fencing check above) means this exact token was
+        # somehow already spent, surviving a process restart unlike
+        # risk/tokens.py's in-memory _used_token_ids set.
+        if await session.get(UsedRiskTokenORM, token.token_id) is not None:
+            audit.status = "rejected"
+            return ExecutionResult(
+                approved=False,
+                risk_check=RiskCheckResult(
+                    approved=False,
+                    rule_results={"token_replay": False},
+                    reasons=["token_replay: a RiskApprovalToken with this id was already consumed."],
+                ),
+                audit_log_id=audit.id,
+            )
+        session.add(UsedRiskTokenORM(token_id=token.token_id, tenant_id=self.tenant_id, consumed_at=datetime.now(UTC)))
+
         order_request = OrderRequest(
             stock_symbol=stock.symbol,
             side=_ACTION_TO_SIDE[signal.action],

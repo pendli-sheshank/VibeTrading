@@ -37,7 +37,12 @@ class OrchestratorScheduler:
     """
 
     def __init__(
-        self, broker: BrokerClient, tenant_id: int, watchlist: list[Stock], settings: Settings | None = None
+        self,
+        broker: BrokerClient,
+        tenant_id: int,
+        watchlist: list[Stock],
+        settings: Settings | None = None,
+        fencing_token: int | None = None,
     ):
         self.broker = broker
         self.tenant_id = tenant_id
@@ -48,7 +53,13 @@ class OrchestratorScheduler:
         self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH), settings=self.settings)
         self.technical_agent = TechnicalAgent(broker=broker)
         self.strategy_agent = StrategyAgent(llm=llm_router.get_adapter(AgentType.STRATEGY))
-        self.risk_engine = RiskEngine(broker=broker, tenant_id=tenant_id, settings=self.settings)
+        # fencing_token: this process's proof of exclusive ownership of
+        # this tenant's trading loop, as of the last successful lease
+        # acquisition/renewal (see orchestrator/lease.py and
+        # orchestrator/manager.py's renewal loop). None means no
+        # distributed enforcement -- single-process dev/test, matching
+        # this class's pre-Phase-20 behavior.
+        self.risk_engine = RiskEngine(broker=broker, tenant_id=tenant_id, settings=self.settings, fencing_token=fencing_token)
         self.pipeline = TradingPipeline(
             tenant_id=tenant_id,
             research_agent=self.research_agent,
@@ -172,7 +183,7 @@ class OrchestratorScheduler:
 
 
 async def build_scheduler(
-    broker: BrokerClient, tenant_id: int, settings: Settings | None = None
+    broker: BrokerClient, tenant_id: int, settings: Settings | None = None, fencing_token: int | None = None
 ) -> OrchestratorScheduler:
     """Resolves the tenant's DB-backed watchlist and constructs an
     OrchestratorScheduler — the async counterpart to the (synchronous)
@@ -180,4 +191,6 @@ async def build_scheduler(
     to be (re)built."""
     async with get_session() as session:
         watchlist = await get_watchlist(session, tenant_id)
-    return OrchestratorScheduler(broker=broker, tenant_id=tenant_id, watchlist=watchlist, settings=settings)
+    return OrchestratorScheduler(
+        broker=broker, tenant_id=tenant_id, watchlist=watchlist, settings=settings, fencing_token=fencing_token
+    )

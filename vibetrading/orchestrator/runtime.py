@@ -36,6 +36,13 @@ class OrchestratorRuntime:
         self._broker: BrokerClient | None = None
         self._scheduler: OrchestratorScheduler | None = None
         self._lock = asyncio.Lock()
+        # Lease state (see orchestrator/lease.py + manager.py's renewal
+        # loop). Defaults to "held, no fencing token" -- a single-process
+        # deployment with no MultiTenantRuntimeManager renewal loop driving
+        # it (e.g. most tests) behaves exactly as it did before Phase 20:
+        # the scheduler runs whenever enable_scheduler does, unfenced.
+        self._has_lease = True
+        self._fencing_token: int | None = None
 
     @property
     def broker(self) -> BrokerClient:
@@ -107,11 +114,27 @@ class OrchestratorRuntime:
         async with self._lock:
             await self._shutdown_locked()
 
+    async def set_lease(self, held: bool, fencing_token: int | None) -> None:
+        """Called by MultiTenantRuntimeManager's renewal loop after each
+        lease acquire/renew attempt. A no-op if nothing actually changed
+        (a routine successful renewal keeps the same fencing_token); a
+        transition -- newly acquired, lost, or handed to a new fencing
+        generation -- triggers restart() so the scheduler (if any) is
+        rebuilt against the current lease state. Before start() has ever
+        run, this only updates the stored state; the next start()/restart()
+        picks it up naturally.
+        """
+        changed = held != self._has_lease or fencing_token != self._fencing_token
+        self._has_lease = held
+        self._fencing_token = fencing_token
+        if changed and self._broker is not None:
+            await self.restart()
+
     async def _build(self) -> tuple[BrokerClient, OrchestratorScheduler | None]:
         broker = get_broker_client(self._settings)
         scheduler = None
-        if self._settings.enable_scheduler:
-            scheduler = await build_scheduler(broker, self.tenant_id, self._settings)
+        if self._settings.enable_scheduler and self._has_lease:
+            scheduler = await build_scheduler(broker, self.tenant_id, self._settings, fencing_token=self._fencing_token)
         return broker, scheduler
 
     async def _shutdown_locked(self) -> None:
