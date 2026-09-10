@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vibetrading.observability.metrics import lease_acquisition_failures_total
 from vibetrading.persistence.orm_models import TenantLeaseORM
 
 # TTL sized to roughly 3x the renewal interval, per the design's crash-
@@ -67,12 +68,14 @@ async def acquire_or_renew_lease(
             await session.flush()
         except IntegrityError:
             await session.rollback()
+            lease_acquisition_failures_total.inc()
             return None
         return lease.fencing_token
 
     is_current_owner = lease.worker_id == worker_id
     is_available = lease.worker_id is None or _aware(lease.lease_expires_at) < now
     if not (is_current_owner or is_available):
+        lease_acquisition_failures_total.inc()
         return None
 
     if not is_current_owner:

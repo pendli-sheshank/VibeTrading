@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     # scheduler running in another.
     redis_url: str | None = None
 
+    # --- Alerting -----------------------------------------------------------
+    # None (the default) means alerts are logged only, never sent anywhere
+    # -- every dev/test path needs zero external dependency. Set to a
+    # Slack incoming-webhook URL (or any endpoint accepting {"text": ...})
+    # to also push a message there when a circuit breaker opens.
+    alert_webhook_url: str | None = None
+
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True
     agent_interval_research_sec: int = 900

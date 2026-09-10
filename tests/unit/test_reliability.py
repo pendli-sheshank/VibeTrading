@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
+from vibetrading.config import get_settings
 from vibetrading.core.reliability import (
     CircuitBreaker,
     CircuitBreakerOpenError,
@@ -182,3 +185,44 @@ async def test_decorator_circuit_name_can_depend_on_instance_state():
 
     assert get_circuit_breaker("account:a").state == "open"
     assert get_circuit_breaker("account:b").state == "closed"  # unaffected -- a different account
+
+
+async def test_a_circuit_opening_sends_an_alert_when_a_webhook_is_configured(monkeypatch):
+    monkeypatch.setattr(get_settings(), "alert_webhook_url", "https://hooks.example.com/webhook")
+    sent = []
+
+    async def fake_send_alert(message: str) -> None:
+        sent.append(message)
+
+    monkeypatch.setattr("vibetrading.core.reliability.send_alert", fake_send_alert)
+
+    @with_retry_and_circuit_breaker("test-alert-circuit", retry_on=(TransientError,), max_attempts=1, failure_threshold=1)
+    async def always_fails():
+        raise TransientError("nope")
+
+    with pytest.raises(TransientError):
+        await always_fails()
+
+    await asyncio.sleep(0)  # let the fire-and-forget alert task run
+    assert len(sent) == 1
+    assert "test-alert-circuit" in sent[0]
+
+
+async def test_a_circuit_opening_sends_no_alert_without_a_webhook_configured(monkeypatch):
+    monkeypatch.setattr(get_settings(), "alert_webhook_url", None)
+    sent = []
+
+    async def fake_send_alert(message: str) -> None:
+        sent.append(message)
+
+    monkeypatch.setattr("vibetrading.core.reliability.send_alert", fake_send_alert)
+
+    @with_retry_and_circuit_breaker("test-no-alert-circuit", retry_on=(TransientError,), max_attempts=1, failure_threshold=1)
+    async def always_fails():
+        raise TransientError("nope")
+
+    with pytest.raises(TransientError):
+        await always_fails()
+
+    await asyncio.sleep(0)
+    assert sent == []

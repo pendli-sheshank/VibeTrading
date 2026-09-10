@@ -25,6 +25,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "redis>=5.0",
     "tenacity>=9.0",
+    "prometheus-fastapi-instrumentator>=7.0",
 ]
 
 [project.optional-dependencies]

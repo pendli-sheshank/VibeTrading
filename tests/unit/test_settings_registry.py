@@ -9,6 +9,7 @@ EXCLUDED_FIELDS = {
     "database_pool_size",
     "database_max_overflow",
     "redis_url",
+    "alert_webhook_url",
     "host",
     "port",
     "log_level",

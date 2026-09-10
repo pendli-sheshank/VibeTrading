@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.middleware("http")(_request_id_middleware)
 
     app.include_router(health.router)
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     app.include_router(auth_router)
 
     api_auth = [Depends(current_active_user)]

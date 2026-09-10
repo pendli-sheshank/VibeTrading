@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
 import time
@@ -14,7 +15,31 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from vibetrading.config import get_settings
+from vibetrading.observability.alerts import send_alert
+from vibetrading.observability.metrics import circuit_breaker_opens_total, circuit_kind
+
 logger = logging.getLogger(__name__)
+
+
+def _record_circuit_open(name: str) -> None:
+    circuit_breaker_opens_total.labels(kind=circuit_kind(name)).inc()
+    if not get_settings().alert_webhook_url:
+        # No webhook configured -- the WARNING log line CircuitBreaker.
+        # on_failure() already emits (plus the metric above) is the whole
+        # alert in this, the common/default, case. Skip scheduling a task
+        # for send_alert()'s otherwise-redundant second log line.
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # Sync context (e.g. a plain unit test driving CircuitBreaker
+        # directly) -- skip the async webhook call rather than crash for
+        # lack of an event loop.
+        return
+    message = f"Circuit breaker '{name}' opened after repeated failures."
+    asyncio.create_task(send_alert(message))
+
 
 T = TypeVar("T")
 
@@ -91,6 +116,7 @@ class CircuitBreaker:
                 logger.warning(
                     "Circuit '%s' opened after %d consecutive failures.", self.name, self._consecutive_failures
                 )
+                _record_circuit_open(self.name)
             self._state = _CircuitState.OPEN
             self._opened_at = time.monotonic()
 

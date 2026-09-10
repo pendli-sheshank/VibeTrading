@@ -9,6 +9,12 @@ from vibetrading.broker.base import BrokerClient
 from vibetrading.config import Settings
 from vibetrading.core.enums import ActionType, OrderSide, OrderStatus
 from vibetrading.core.models import OrderRequest, OrderResult, RiskCheckResult, Signal, Stock
+from vibetrading.observability.metrics import (
+    fencing_aborts_total,
+    orders_placed_total,
+    risk_rejections_total,
+    token_replay_rejections_total,
+)
 from vibetrading.orchestrator.lease import verify_lease
 from vibetrading.persistence.orm_models import AuditLogORM, OrderORM, RiskEventORM, UsedRiskTokenORM
 from vibetrading.risk.config import RiskConfig
@@ -64,6 +70,7 @@ class RiskEngine:
             # Never mint a token or touch risk state on a lease this worker
             # no longer (verifiably) owns -- worst case is a skipped cycle,
             # never a duplicate order from two workers racing.
+            fencing_aborts_total.inc()
             return ExecutionResult(
                 approved=False,
                 risk_check=RiskCheckResult(
@@ -142,6 +149,9 @@ class RiskEngine:
 
         if not approved:
             audit.status = "rejected"
+            for outcome in outcomes:
+                if not outcome.passed:
+                    risk_rejections_total.labels(rule=outcome.rule_name).inc()
             return ExecutionResult(approved=False, risk_check=risk_check, order_result=None, audit_log_id=audit.id)
 
         token = mint_token(signal_id=signal_id, stock_symbol=stock.symbol, quantity=ctx.quantity)
@@ -154,6 +164,7 @@ class RiskEngine:
         # risk/tokens.py's in-memory _used_token_ids set.
         if await session.get(UsedRiskTokenORM, token.token_id) is not None:
             audit.status = "rejected"
+            token_replay_rejections_total.inc()
             return ExecutionResult(
                 approved=False,
                 risk_check=RiskCheckResult(
@@ -203,4 +214,5 @@ class RiskEngine:
         if order_result.realized_pnl:
             await record_realized_pnl(session, self.tenant_id, order_result.realized_pnl)
 
+        orders_placed_total.inc()
         return ExecutionResult(approved=True, risk_check=risk_check, order_result=order_result, audit_log_id=audit.id)
