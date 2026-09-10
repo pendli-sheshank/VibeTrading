@@ -25,13 +25,5 @@
   </table>
 
   <h2>Configured limits</h2>
-  <table class="kv-table">
-    <tr><td>Max position size (INR)</td><td>{{ config.max_position_size_inr }}</td></tr>
-    <tr><td>Max % capital per stock</td><td>{{ "%.0f%%" | format(config.max_pct_capital_per_stock * 100) }}</td></tr>
-    <tr><td>Max concurrent positions</td><td>{{ config.max_concurrent_positions }}</td></tr>
-    <tr><td>Max daily loss (INR)</td><td>{{ config.max_daily_loss_inr }}</td></tr>
-    <tr><td>Mandatory stop-loss</td><td>{{ "%.1f%%" | format(config.mandatory_stop_loss_pct * 100) }}</td></tr>
-    <tr><td>Min signal confidence</td><td>{{ "%.0f%%" | format(config.min_signal_confidence * 100) }}</td></tr>
-    <tr><td>Max total exposure</td><td>{{ "%.0f%%" | format(config.max_total_exposure_pct * 100) }}</td></tr>
-  </table>
+  {% include "_risk_limits_table.html" %}
 </section>

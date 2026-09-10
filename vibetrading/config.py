@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vibetrading.core.enums import ExecutionMode, KillSwitchMode
@@ -57,9 +56,6 @@ class Settings(BaseSettings):
     chat_source_stocktwits_enabled: bool = False
     chat_source_valuepickr_enabled: bool = False
 
-    # --- Watchlist -----------------------------------------------------------
-    watchlist: str = "RELIANCE,TCS,INFY"
-
     # --- Database --------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./vibetrading.db"
 
@@ -83,16 +79,12 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
-    @field_validator("watchlist")
-    @classmethod
-    def _non_empty_watchlist(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("WATCHLIST must not be empty")
-        return v
-
-    @property
-    def watchlist_symbols(self) -> list[str]:
-        return [s.strip().upper() for s in self.watchlist.split(",") if s.strip()]
+    # Encrypts secret values stored in the app_settings table (Dhan token,
+    # LLM keys, etc — see vibetrading/settings/crypto.py). Stays env-only
+    # deliberately: you need this key to decrypt anything in the DB, so it
+    # can't itself live in the DB. MUST be overridden before real use, same
+    # as risk_token_secret — rotating it orphans previously-stored secrets.
+    app_secrets_key: str = "dev-insecure-key-change-me"
 
     @property
     def has_dhan_credentials(self) -> bool:

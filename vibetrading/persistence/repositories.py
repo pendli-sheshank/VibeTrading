@@ -13,6 +13,7 @@ from vibetrading.persistence.orm_models import (
     BacktestRunORM,
     OrderORM,
     RiskEventORM,
+    SettingORM,
     SignalORM,
     StockORM,
 )
@@ -47,6 +48,28 @@ async def get_stock_by_symbol(session: AsyncSession, symbol: str) -> StockORM | 
 async def list_stocks(session: AsyncSession) -> list[StockORM]:
     result = await session.execute(select(StockORM))
     return list(result.scalars().all())
+
+
+async def delete_stock(session: AsyncSession, symbol: str) -> bool:
+    stock = await get_stock_by_symbol(session, symbol)
+    if stock is None:
+        return False
+    await session.delete(stock)
+    return True
+
+
+DEFAULT_WATCHLIST_STOCKS: list[Stock] = [Stock(symbol="RELIANCE"), Stock(symbol="TCS"), Stock(symbol="INFY")]
+
+
+async def seed_default_watchlist_if_empty(session: AsyncSession) -> None:
+    """Fresh installs get a usable watchlist with zero configuration — real
+    live trading still needs a Dhan security ID added per stock via
+    Settings before DhanBrokerClient can place an order for it, but paper
+    mode works immediately."""
+    if await list_stocks(session):
+        return
+    for stock in DEFAULT_WATCHLIST_STOCKS:
+        await upsert_stock(session, stock)
 
 
 async def save_agent_output(session: AsyncSession, output: AgentOutput) -> AgentRunORM:
@@ -168,3 +191,30 @@ async def list_recent_risk_events(session: AsyncSession, limit: int = 50) -> lis
     stmt = select(RiskEventORM).order_by(RiskEventORM.timestamp.desc()).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def list_app_settings(session: AsyncSession) -> list[SettingORM]:
+    result = await session.execute(select(SettingORM))
+    return list(result.scalars().all())
+
+
+async def get_app_setting(session: AsyncSession, key: str) -> SettingORM | None:
+    return await session.get(SettingORM, key)
+
+
+async def upsert_app_setting(session: AsyncSession, key: str, value: str, is_secret: bool) -> SettingORM:
+    row = await session.get(SettingORM, key)
+    if row is None:
+        row = SettingORM(key=key, value=value, is_secret=is_secret, updated_at=datetime.now(UTC))
+        session.add(row)
+    else:
+        row.value = value
+        row.is_secret = is_secret
+        row.updated_at = datetime.now(UTC)
+    return row
+
+
+async def delete_app_setting(session: AsyncSession, key: str) -> None:
+    row = await session.get(SettingORM, key)
+    if row is not None:
+        await session.delete(row)

@@ -1,0 +1,10 @@
+{% import "_settings_field_macros.html" as macros %}
+<section class="card" id="settings-data_sources">
+  <h2>Data Sources</h2>
+  <form hx-post="/settings/save/data_sources" hx-target="#settings-data_sources" hx-swap="outerHTML">
+    {% for field in sections.data_sources %}
+      {{ macros.render_field(field, settings) }}
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+</section>

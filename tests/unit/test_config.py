@@ -11,11 +11,6 @@ def test_defaults_are_safe_paper_mode():
     assert settings.has_dhan_credentials is False
 
 
-def test_watchlist_symbols_parsed_and_uppercased():
-    settings = Settings(_env_file=None, watchlist=" reliance, tcs ,infy ")
-    assert settings.watchlist_symbols == ["RELIANCE", "TCS", "INFY"]
-
-
 def test_is_live_mode_reflects_execution_mode():
     live = Settings(_env_file=None, vibetrading_execution_mode="live")
     paper = Settings(_env_file=None, vibetrading_execution_mode="paper")

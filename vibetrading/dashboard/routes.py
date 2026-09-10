@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.backtest.backtest_agent import BacktestAgent
@@ -17,6 +15,7 @@ from vibetrading.broker.base import BrokerClient
 from vibetrading.config import get_settings
 from vibetrading.core.enums import AgentType, KillSwitchMode
 from vibetrading.core.models import Stock
+from vibetrading.dashboard.templating import templates
 from vibetrading.llm.router import LLMRouter
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.persistence.repositories import (
@@ -25,12 +24,10 @@ from vibetrading.persistence.repositories import (
     list_recent_orders,
     list_recent_risk_events,
     list_signals_for_stock,
+    list_stocks,
 )
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.state import get_or_create_risk_state, set_kill_switch
-
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter(include_in_schema=False)
 
@@ -41,9 +38,10 @@ def _mode() -> str:
 
 @router.get("/", response_class=HTMLResponse)
 async def watchlist_page(request: Request, session: AsyncSession = Depends(get_db)):
-    settings = get_settings()
+    stocks = await list_stocks(session)
     rows = []
-    for symbol in settings.watchlist_symbols:
+    for stock in stocks:
+        symbol = stock.symbol
         technical = await get_latest_agent_output(session, symbol, AgentType.TECHNICAL.value)
         research = await get_latest_agent_output(session, symbol, AgentType.RESEARCH.value)
         signals = await list_signals_for_stock(session, symbol)
@@ -116,12 +114,17 @@ async def risk_kill_switch_toggle(
 
 
 @router.get("/backtest", response_class=HTMLResponse)
-async def backtest_page(request: Request):
-    settings = get_settings()
+async def backtest_page(request: Request, session: AsyncSession = Depends(get_db)):
+    stocks = await list_stocks(session)
     return templates.TemplateResponse(
         request,
         "backtest.html",
-        {"watchlist": settings.watchlist_symbols, "result": None, "mode": _mode(), "active_page": "backtest"},
+        {
+            "watchlist": [s.symbol for s in stocks],
+            "result": None,
+            "mode": _mode(),
+            "active_page": "backtest",
+        },
     )
 
 

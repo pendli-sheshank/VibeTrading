@@ -1,0 +1,31 @@
+{% set live_settings = get_settings() %}
+<div class="mode-control mode-control-confirm" id="{{ dom_id }}">
+  <p class="mode-confirm-warning">
+    <strong>Switching to LIVE trading places real orders with no per-trade approval.</strong>
+    {% if not live_settings.has_dhan_credentials %}
+    <br />
+    <span class="badge badge-danger">
+      No Dhan credentials configured yet — live mode will have no working broker until you add
+      them under Execution &amp; Broker in Settings.
+    </span>
+    {% endif %}
+  </p>
+
+  <p class="muted">Every order will still be checked against these limits before it's placed:</p>
+  {% include "_risk_limits_table.html" %}
+
+  <form hx-post="/settings/execution-mode/live" hx-target="#{{ dom_id }}" hx-swap="outerHTML" class="mode-control-form">
+    <input type="hidden" name="confirm_live" value="yes" />
+    <input type="hidden" name="dom_id" value="{{ dom_id }}" />
+    <button type="submit" class="btn btn-danger">Confirm: switch to LIVE</button>
+  </form>
+  <button
+    type="button"
+    class="btn btn-sm"
+    hx-get="/settings/mode-control?dom_id={{ dom_id }}"
+    hx-target="#{{ dom_id }}"
+    hx-swap="outerHTML"
+  >
+    Cancel
+  </button>
+</div>

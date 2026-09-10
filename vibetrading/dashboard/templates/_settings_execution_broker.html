@@ -1,0 +1,14 @@
+{% import "_settings_field_macros.html" as macros %}
+<section class="card" id="settings-execution_broker">
+  <h2>Execution &amp; Broker</h2>
+
+  {% set dom_id = "settings-mode-control" %}
+  {% include "_mode_control.html" %}
+
+  <form hx-post="/settings/save/execution_broker" hx-target="#settings-execution_broker" hx-swap="outerHTML">
+    {% for field in sections.execution_broker %}
+      {{ macros.render_field(field, settings) }}
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+</section>
