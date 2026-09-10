@@ -46,7 +46,7 @@ class TechnicalAgent(Agent):
 
         df = candles_to_dataframe(candles)
         indicators = compute_all_indicators(df)
-        summary, confidence = _interpret(indicators)
+        summary, confidence = interpret_indicators(indicators)
 
         return AgentOutput(
             agent_type=self.agent_type,
@@ -58,12 +58,14 @@ class TechnicalAgent(Agent):
         )
 
 
-def _interpret(indicators: dict) -> tuple[str, float]:
+def interpret_indicators(indicators: dict) -> tuple[str, float]:
     """Turn raw indicator values into a human-readable summary and a rough
     confidence score (0-1) that momentum favors a directional move. This is
     intentionally simple, rule-of-thumb interpretation — the LLM-backed
-    Strategy Agent (later phase) does the actual trade reasoning; this just
-    gives it a clean, pre-digested technical read to work from.
+    Strategy Agent does the actual trade reasoning; this just gives it a
+    clean, pre-digested technical read to work from. Also reused by the
+    Backtest Agent so historical replays share the exact same technical
+    interpretation as the live path.
     """
     rsi = indicators.get("rsi_14")
     macd_hist = indicators.get("macd_histogram")

@@ -133,6 +133,7 @@ class TradeLogEntry(BaseModel):
     """One simulated/backtested trade for a BacktestResult's trade log."""
 
     stock_symbol: str
+    direction: str = "long"  # "long" | "short"
     entry_timestamp: datetime
     exit_timestamp: datetime | None = None
     entry_price: float

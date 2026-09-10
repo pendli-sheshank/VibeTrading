@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vibetrading.core.models import AgentOutput, Signal, Stock
-from vibetrading.persistence.orm_models import AgentRunORM, SignalORM, StockORM
+from vibetrading.core.models import AgentOutput, BacktestResult, Signal, Stock
+from vibetrading.persistence.orm_models import AgentRunORM, BacktestRunORM, SignalORM, StockORM
 
 
 async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
@@ -91,5 +93,35 @@ async def list_signals_for_stock(
     if only_realized:
         stmt = stmt.where(SignalORM.realized_pnl.is_not(None))
     stmt = stmt.order_by(SignalORM.timestamp.desc())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def save_backtest_run(session: AsyncSession, result: BacktestResult) -> BacktestRunORM:
+    orm_run = BacktestRunORM(
+        stock_symbol=result.stock_symbol,
+        start_date=result.start_date,
+        end_date=result.end_date,
+        total_trades=result.total_trades,
+        win_rate=result.win_rate,
+        total_pnl=result.total_pnl,
+        max_drawdown=result.max_drawdown,
+        trades=[trade.model_dump(mode="json") for trade in result.trades],
+        created_at=datetime.now(UTC),
+    )
+    session.add(orm_run)
+    return orm_run
+
+
+async def get_backtest_run(session: AsyncSession, run_id: int) -> BacktestRunORM | None:
+    return await session.get(BacktestRunORM, run_id)
+
+
+async def list_backtest_runs_for_stock(session: AsyncSession, stock_symbol: str) -> list[BacktestRunORM]:
+    stmt = (
+        select(BacktestRunORM)
+        .where(BacktestRunORM.stock_symbol == stock_symbol)
+        .order_by(BacktestRunORM.created_at.desc())
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
