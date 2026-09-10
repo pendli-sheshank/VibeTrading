@@ -3,12 +3,19 @@ from __future__ import annotations
 import random
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import ExecutionMode, OrderSide, OrderStatus
 from vibetrading.core.exceptions import OrderRejectedError
-from vibetrading.core.models import Candle, FundsSnapshot, OrderRequest, OrderResult, Position, Stock
+from vibetrading.core.models import (
+    Candle,
+    FundsSnapshot,
+    OrderRequest,
+    OrderResult,
+    Position,
+    Stock,
+)
 
 
 class MockBrokerClient(BrokerClient):
@@ -65,7 +72,7 @@ class MockBrokerClient(BrokerClient):
         return candles
 
     async def get_ltp(self, stock: Stock) -> float:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=2), now)
         return candles[-1].close if candles else 0.0
 
@@ -104,7 +111,7 @@ class MockBrokerClient(BrokerClient):
                 quantity=signed_qty,
                 avg_price=fill_price,
                 stop_loss_price=order_request.stop_loss_price,
-                opened_at=datetime.now(timezone.utc),
+                opened_at=datetime.now(UTC),
             )
             return
 

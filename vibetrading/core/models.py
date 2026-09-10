@@ -39,6 +39,7 @@ class Candle(BaseModel):
 class AgentOutput(BaseModel):
     """One agent's read on one stock at one point in time."""
 
+    id: int | None = None  # set once persisted; lets downstream agents cite their sources
     agent_type: AgentType
     stock_symbol: str
     timestamp: datetime
@@ -59,6 +60,9 @@ class Signal(BaseModel):
     contributing_output_ids: list[int] = Field(default_factory=list)
     suggested_quantity: int | None = None
     suggested_stop_loss: float | None = None
+    # Price the signal was generated against (e.g. latest technical close) —
+    # the reference point performance_tracker.py reconciles later outcomes against.
+    reference_price: float | None = None
 
 
 class RiskCheckResult(BaseModel):

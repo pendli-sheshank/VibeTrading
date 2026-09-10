@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vibetrading.core.models import AgentOutput, Stock
-from vibetrading.persistence.orm_models import AgentRunORM, StockORM
+from vibetrading.core.models import AgentOutput, Signal, Stock
+from vibetrading.persistence.orm_models import AgentRunORM, SignalORM, StockORM
 
 
 async def upsert_stock(session: AsyncSession, stock: Stock) -> StockORM:
@@ -61,3 +61,35 @@ async def get_latest_agent_output(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def save_signal(session: AsyncSession, signal: Signal) -> SignalORM:
+    orm_signal = SignalORM(
+        stock_symbol=signal.stock_symbol,
+        timestamp=signal.timestamp,
+        source=signal.source.value,
+        action=signal.action.value,
+        confidence=signal.confidence,
+        reasoning=signal.reasoning,
+        contributing_output_ids=signal.contributing_output_ids,
+        suggested_quantity=signal.suggested_quantity,
+        suggested_stop_loss=signal.suggested_stop_loss,
+        reference_price=signal.reference_price,
+    )
+    session.add(orm_signal)
+    return orm_signal
+
+
+async def get_signal(session: AsyncSession, signal_id: int) -> SignalORM | None:
+    return await session.get(SignalORM, signal_id)
+
+
+async def list_signals_for_stock(
+    session: AsyncSession, stock_symbol: str, only_realized: bool = False
+) -> list[SignalORM]:
+    stmt = select(SignalORM).where(SignalORM.stock_symbol == stock_symbol)
+    if only_realized:
+        stmt = stmt.where(SignalORM.realized_pnl.is_not(None))
+    stmt = stmt.order_by(SignalORM.timestamp.desc())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())

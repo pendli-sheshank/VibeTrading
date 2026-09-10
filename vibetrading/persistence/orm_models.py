@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Boolean
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -48,6 +48,7 @@ class SignalORM(Base):
     contributing_output_ids: Mapped[list] = mapped_column(JSON, default=list)
     suggested_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     suggested_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reference_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Realized outcome, filled in later by the performance tracker.
     realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     realized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -4,7 +4,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime
 
-from vibetrading.core.models import Candle, FundsSnapshot, OrderRequest, OrderResult, Position, Stock
+from vibetrading.core.models import (
+    Candle,
+    FundsSnapshot,
+    OrderRequest,
+    OrderResult,
+    Position,
+    Stock,
+)
 
 
 class BrokerClient(ABC):

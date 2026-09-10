@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -20,7 +20,7 @@ from vibetrading.core.models import Candle
 
 
 def make_candles(closes: list[float], volumes: list[int] | None = None) -> list[Candle]:
-    start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
     volumes = volumes or [100_000] * len(closes)
     candles = []
     for i, (close, vol) in enumerate(zip(closes, volumes)):
@@ -105,7 +105,7 @@ def test_bollinger_bands_flat_price_has_zero_width():
 
 def test_bollinger_bands_upper_above_lower_when_volatile():
     series = pd.Series([50, 55, 45, 60, 40, 58, 42, 56, 44, 52, 48, 53, 47, 51, 49, 54, 46, 57, 43, 59, 41])
-    upper, middle, lower = bollinger_bands(series, window=20, num_std=2)
+    upper, _middle, lower = bollinger_bands(series, window=20, num_std=2)
     assert upper.iloc[-1] > lower.iloc[-1]
 
 

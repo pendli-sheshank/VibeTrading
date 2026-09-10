@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from vibetrading.agents.base import Agent
-from vibetrading.agents.strategy.technical_indicators import candles_to_dataframe, compute_all_indicators
+from vibetrading.agents.strategy.technical_indicators import (
+    candles_to_dataframe,
+    compute_all_indicators,
+)
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import AgentOutput, Stock
@@ -26,7 +29,7 @@ class TechnicalAgent(Agent):
         self.run_interval_seconds = run_interval_seconds
 
     async def analyze(self, stock: Stock, context: dict[str, Any]) -> AgentOutput:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candles = await self.broker.get_historical_candles(
             stock, "1d", now - timedelta(days=self.lookback_days), now
         )

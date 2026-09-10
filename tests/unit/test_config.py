@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from vibetrading.config import Settings
 from vibetrading.core.enums import ExecutionMode
 
