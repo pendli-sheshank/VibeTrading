@@ -1,0 +1,37 @@
+<section class="card" id="risk-panel">
+  <h2>Kill switch</h2>
+  <p>
+    Status:
+    {% if state.kill_switch_active %}
+      <span class="badge badge-danger">ACTIVE ({{ state.kill_switch_mode }})</span>
+    {% else %}
+      <span class="badge badge-ok">inactive</span>
+    {% endif %}
+  </p>
+  <form hx-post="/risk/kill-switch" hx-target="#risk-panel" hx-swap="outerHTML">
+    {% if state.kill_switch_active %}
+      <input type="hidden" name="active" value="false" />
+      <button type="submit" class="btn btn-ok">Deactivate kill switch</button>
+    {% else %}
+      <input type="hidden" name="active" value="true" />
+      <button type="submit" class="btn btn-danger">Activate kill switch</button>
+    {% endif %}
+  </form>
+
+  <h2>Daily state</h2>
+  <table class="kv-table">
+    <tr><td>Realized P&amp;L today</td><td>{{ "%+.2f" | format(state.daily_realized_pnl) }}</td></tr>
+    <tr><td>Date (UTC)</td><td>{{ state.daily_pnl_date }}</td></tr>
+  </table>
+
+  <h2>Configured limits</h2>
+  <table class="kv-table">
+    <tr><td>Max position size (INR)</td><td>{{ config.max_position_size_inr }}</td></tr>
+    <tr><td>Max % capital per stock</td><td>{{ "%.0f%%" | format(config.max_pct_capital_per_stock * 100) }}</td></tr>
+    <tr><td>Max concurrent positions</td><td>{{ config.max_concurrent_positions }}</td></tr>
+    <tr><td>Max daily loss (INR)</td><td>{{ config.max_daily_loss_inr }}</td></tr>
+    <tr><td>Mandatory stop-loss</td><td>{{ "%.1f%%" | format(config.mandatory_stop_loss_pct * 100) }}</td></tr>
+    <tr><td>Min signal confidence</td><td>{{ "%.0f%%" | format(config.min_signal_confidence * 100) }}</td></tr>
+    <tr><td>Max total exposure</td><td>{{ "%.0f%%" | format(config.max_total_exposure_pct * 100) }}</td></tr>
+  </table>
+</section>

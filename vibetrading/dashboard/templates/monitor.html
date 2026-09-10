@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %} — Monitor{% endblock %}
+{% block content %}
+<h1>Monitor</h1>
+
+<section class="card">
+  <h2>Funds</h2>
+  <table class="kv-table">
+    <tr><td>Available balance</td><td>{{ "%.2f" | format(funds.available_balance) }}</td></tr>
+    <tr><td>Used margin</td><td>{{ "%.2f" | format(funds.used_margin) }}</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Open positions</h2>
+  <table class="data-table">
+    <thead><tr><th>Symbol</th><th>Quantity</th><th>Avg price</th><th>Unrealized P&amp;L</th><th>Stop-loss</th></tr></thead>
+    <tbody>
+      {% for position in positions %}
+      <tr>
+        <td>{{ position.stock_symbol }}</td>
+        <td>{{ position.quantity }}</td>
+        <td>{{ "%.2f" | format(position.avg_price) }}</td>
+        <td>{{ "%+.2f" | format(position.unrealized_pnl) }}</td>
+        <td>{{ "%.2f" | format(position.stop_loss_price) if position.stop_loss_price is not none else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No open positions.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Recent orders</h2>
+  <table class="data-table">
+    <thead><tr><th>When</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th><th>Mode</th><th>Fill price</th></tr></thead>
+    <tbody>
+      {% for order in orders %}
+      <tr>
+        <td>{{ order.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ order.stock_symbol }}</td>
+        <td>{{ order.side | upper }}</td>
+        <td>{{ order.quantity }}</td>
+        <td>{{ order.status }}</td>
+        <td>{{ order.mode }}</td>
+        <td>{{ "%.2f" | format(order.filled_price) if order.filled_price is not none else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No orders yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Audit log</h2>
+  <table class="data-table">
+    <thead><tr><th>When</th><th>Status</th><th>Mode</th><th>Order ID</th><th>Risk checks</th></tr></thead>
+    <tbody>
+      {% for entry in audit %}
+      <tr>
+        <td>{{ entry.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ entry.status }}</td>
+        <td>{{ entry.mode }}</td>
+        <td>{{ entry.order_id or "—" }}</td>
+        <td>
+          {% for rule, passed in entry.risk_checks_passed.items() %}
+            <span class="badge {{ 'badge-ok' if passed else 'badge-danger' }}">{{ rule }}</span>
+          {% endfor %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No audit entries yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
