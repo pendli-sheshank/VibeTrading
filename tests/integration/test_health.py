@@ -18,6 +18,19 @@ async def health_client(monkeypatch):
     engine = make_test_engine()
     await reset_schema(engine)
     await seed_test_users(engine)
+
+    # reset_schema() only drops/creates Base.metadata's tables -- it has no
+    # idea alembic_version exists, since Alembic manages that table itself,
+    # not the ORM. In CI's Postgres job, the "alembic upgrade head against
+    # clean Postgres" step runs first against this same TEST_DATABASE_URL
+    # database, leaving a real alembic_version table (at the real head
+    # revision) behind for every test that follows, including this one.
+    # Without this, both tests below silently assume a table that may or
+    # may not already be there depending on which CI job/local setup is
+    # running.
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def override_get_db():
