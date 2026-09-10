@@ -50,6 +50,28 @@ async def list_stocks(session: AsyncSession) -> list[StockORM]:
     return list(result.scalars().all())
 
 
+async def delete_stock(session: AsyncSession, symbol: str) -> bool:
+    stock = await get_stock_by_symbol(session, symbol)
+    if stock is None:
+        return False
+    await session.delete(stock)
+    return True
+
+
+DEFAULT_WATCHLIST_STOCKS: list[Stock] = [Stock(symbol="RELIANCE"), Stock(symbol="TCS"), Stock(symbol="INFY")]
+
+
+async def seed_default_watchlist_if_empty(session: AsyncSession) -> None:
+    """Fresh installs get a usable watchlist with zero configuration — real
+    live trading still needs a Dhan security ID added per stock via
+    Settings before DhanBrokerClient can place an order for it, but paper
+    mode works immediately."""
+    if await list_stocks(session):
+        return
+    for stock in DEFAULT_WATCHLIST_STOCKS:
+        await upsert_stock(session, stock)
+
+
 async def save_agent_output(session: AsyncSession, output: AgentOutput) -> AgentRunORM:
     orm_output = AgentRunORM(
         agent_type=output.agent_type.value,

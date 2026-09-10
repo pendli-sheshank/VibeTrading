@@ -28,12 +28,16 @@ class OrchestratorScheduler:
     (AsyncIOScheduler, in-process — no Celery/Kafka needed at this scale,
     since this is a single deployable service). Each job opens its own DB
     session per tick; sessions are never shared across concurrent job runs.
+
+    `watchlist` is resolved by the caller (see build_scheduler() below) and
+    passed in explicitly — the DB-backed watchlist can only be read async,
+    so this constructor stays synchronous and doesn't resolve it itself.
     """
 
-    def __init__(self, broker: BrokerClient, settings: Settings | None = None):
+    def __init__(self, broker: BrokerClient, watchlist: list[Stock], settings: Settings | None = None):
         self.broker = broker
         self.settings = settings or get_settings()
-        self.watchlist: list[Stock] = get_watchlist(self.settings)
+        self.watchlist: list[Stock] = watchlist
 
         llm_router = LLMRouter(self.settings)
         self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH))
@@ -111,3 +115,12 @@ class OrchestratorScheduler:
                 await self.stop_loss_monitor.check_all(session)
         except Exception:
             logger.exception("Stop-loss monitor cycle failed")
+
+
+async def build_scheduler(broker: BrokerClient, settings: Settings | None = None) -> OrchestratorScheduler:
+    """Resolves the DB-backed watchlist and constructs an OrchestratorScheduler
+    — the async counterpart to the (synchronous) constructor, used by
+    orchestrator/runtime.py wherever a scheduler needs to be (re)built."""
+    async with get_session() as session:
+        watchlist = await get_watchlist(session)
+    return OrchestratorScheduler(broker=broker, watchlist=watchlist, settings=settings)

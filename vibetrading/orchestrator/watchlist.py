@@ -1,13 +1,27 @@
 from __future__ import annotations
 
-from vibetrading.config import Settings, get_settings
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from vibetrading.core.models import Stock
+from vibetrading.persistence.repositories import list_stocks
 
 
-def get_watchlist(settings: Settings | None = None) -> list[Stock]:
-    """The configured stock universe. env-list for v1 (WATCHLIST=A,B,C);
-    a DB-backed table is a natural later upgrade if the list needs to be
-    editable at runtime without a redeploy.
+async def get_watchlist(session: AsyncSession) -> list[Stock]:
+    """The configured stock universe — DB-backed (the `stocks` table),
+    editable via the Settings UI, including each stock's Dhan security ID
+    (required before DhanBrokerClient can trade it live). A fresh install's
+    table is seeded with defaults by
+    persistence.repositories.seed_default_watchlist_if_empty(), called once
+    from the app's lifespan.
     """
-    settings = settings or get_settings()
-    return [Stock(symbol=symbol) for symbol in settings.watchlist_symbols]
+    rows = await list_stocks(session)
+    return [
+        Stock(
+            symbol=row.symbol,
+            exchange=row.exchange,
+            dhan_security_id=row.dhan_security_id,
+            name=row.name,
+            sector=row.sector,
+        )
+        for row in rows
+    ]

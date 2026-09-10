@@ -25,6 +25,7 @@ from vibetrading.persistence.repositories import (
     list_recent_orders,
     list_recent_risk_events,
     list_signals_for_stock,
+    list_stocks,
 )
 from vibetrading.risk.config import RiskConfig
 from vibetrading.risk.state import get_or_create_risk_state, set_kill_switch
@@ -41,9 +42,10 @@ def _mode() -> str:
 
 @router.get("/", response_class=HTMLResponse)
 async def watchlist_page(request: Request, session: AsyncSession = Depends(get_db)):
-    settings = get_settings()
+    stocks = await list_stocks(session)
     rows = []
-    for symbol in settings.watchlist_symbols:
+    for stock in stocks:
+        symbol = stock.symbol
         technical = await get_latest_agent_output(session, symbol, AgentType.TECHNICAL.value)
         research = await get_latest_agent_output(session, symbol, AgentType.RESEARCH.value)
         signals = await list_signals_for_stock(session, symbol)
@@ -116,12 +118,17 @@ async def risk_kill_switch_toggle(
 
 
 @router.get("/backtest", response_class=HTMLResponse)
-async def backtest_page(request: Request):
-    settings = get_settings()
+async def backtest_page(request: Request, session: AsyncSession = Depends(get_db)):
+    stocks = await list_stocks(session)
     return templates.TemplateResponse(
         request,
         "backtest.html",
-        {"watchlist": settings.watchlist_symbols, "result": None, "mode": _mode(), "active_page": "backtest"},
+        {
+            "watchlist": [s.symbol for s in stocks],
+            "result": None,
+            "mode": _mode(),
+            "active_page": "backtest",
+        },
     )
 
 
