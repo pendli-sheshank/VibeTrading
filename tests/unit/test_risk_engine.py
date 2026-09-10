@@ -222,3 +222,27 @@ async def test_place_order_rejects_missing_token():
     order = OrderRequest(stock_symbol="TCS", side="buy", quantity=1, mode="paper")
     with pytest.raises(InvalidRiskTokenError):
         await broker.place_order(order, None)
+
+
+class ExplodingBroker(SpyBroker):
+    """A broker whose place_order always fails after verifying the token —
+    used to exercise RiskEngine's audit-log-on-failure path."""
+
+    async def place_order(self, order_request: OrderRequest, risk_token) -> OrderResult:
+        self._require_valid_token(risk_token)
+        raise ConnectionError("broker unreachable")
+
+
+async def test_broker_failure_marks_audit_entry_failed_and_propagates(db_session):
+    broker = ExplodingBroker(db_session)
+    engine = RiskEngine(broker=broker, config=make_config())
+
+    with pytest.raises(ConnectionError):
+        await engine.approve_and_execute(db_session, make_signal(), STOCK)
+
+    rows = (await db_session.execute(select(AuditLogORM))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "failed"
+
+    order_rows = (await db_session.execute(select(OrderORM))).scalars().all()
+    assert order_rows == []

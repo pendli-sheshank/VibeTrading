@@ -335,3 +335,20 @@ def test_order_validation_fails_with_zero_quantity():
 def test_order_validation_skips_hold():
     ctx = make_ctx(signal=make_signal(action=ActionType.HOLD))
     assert OrderValidationRule().check(ctx).passed
+
+
+def test_order_validation_fails_with_missing_stock_symbol():
+    ctx = make_ctx(stock=Stock(symbol="X"))
+    ctx.stock.symbol = ""  # bypass the model's own validation to exercise this defensive check
+    ctx.quantity = 10
+    outcome = OrderValidationRule().check(ctx)
+    assert not outcome.passed
+    assert "Missing stock symbol" in outcome.reason
+
+
+def test_order_validation_fails_for_unsupported_action():
+    ctx = make_ctx(signal=make_signal(action=ActionType.EXIT))
+    ctx.quantity = 10
+    outcome = OrderValidationRule().check(ctx)
+    assert not outcome.passed
+    assert "Unsupported action" in outcome.reason
