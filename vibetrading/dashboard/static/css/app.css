@@ -195,6 +195,20 @@ table { width: 100%; border-collapse: collapse; }
 }
 .settings-add-stock h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-card { width: 100%; max-width: 380px; }
+.auth-brand { margin-bottom: 8px; }
+.auth-form { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.auth-form .btn { margin-top: 8px; }
+.auth-footer { margin-top: 16px; text-align: center; }
+.logout-form { display: inline; }
+
 .ws-indicator {
   position: fixed;
   bottom: 16px;

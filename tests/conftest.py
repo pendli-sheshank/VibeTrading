@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from vibetrading.config import get_settings
 from vibetrading.persistence.orm_models import Base
+from vibetrading.rate_limit import limiter
 
 
 @pytest_asyncio.fixture
@@ -34,3 +35,14 @@ def _reset_global_settings():
     yield
     for key, value in snapshot.items():
         setattr(settings, key, value)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """`limiter` (vibetrading/rate_limit.py) is one process-wide in-memory
+    instance for the whole test session -- reset its counters before every
+    test so an earlier test's requests to a rate-limited endpoint (e.g.
+    /login, /register) never spuriously trip a later, unrelated test's
+    limit."""
+    limiter.reset()
+    yield

@@ -4,9 +4,11 @@ import asyncio
 import contextlib
 import logging
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import Depends, WebSocket, WebSocketDisconnect
 
+from vibetrading.auth.backend import current_active_user
 from vibetrading.orchestrator.event_bus import event_bus
+from vibetrading.persistence.orm_models import UserORM
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def websocket_endpoint(websocket: WebSocket, user: UserORM = Depends(current_active_user)) -> None:
     await manager.connect(websocket)
     try:
         while True:

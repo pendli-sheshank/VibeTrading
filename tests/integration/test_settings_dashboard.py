@@ -7,10 +7,13 @@ from sqlalchemy.pool import StaticPool
 
 from vibetrading.api.app import app
 from vibetrading.api.deps import get_db, get_runtime
+from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.config import get_settings
-from vibetrading.persistence.orm_models import Base
+from vibetrading.persistence.orm_models import Base, UserORM
 from vibetrading.persistence.repositories import get_app_setting
+
+FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
 
 
 class FakeRuntime:
@@ -53,6 +56,8 @@ async def settings_client():
     runtime = FakeRuntime(broker)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_runtime] = lambda: runtime
+    app.dependency_overrides[current_active_user] = lambda: FAKE_USER
+    app.dependency_overrides[current_dashboard_user] = lambda: FAKE_USER
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

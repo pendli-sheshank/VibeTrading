@@ -74,6 +74,15 @@ class Settings(BaseSettings):
     risk_min_signal_confidence: float = 0.65
     risk_max_total_exposure_pct: float = 0.50
 
+    # --- Auth -----------------------------------------------------------------
+    # Signs session cookies (JWT) minted on login. MUST be overridden with a
+    # real random secret before running with real user accounts — same
+    # insecure-default convention as risk_token_secret/app_secrets_key.
+    auth_secret_key: str = "dev-insecure-auth-secret-change-me"
+    # Cookies are only ever sent over HTTPS when true. Defaults off so local
+    # http://localhost dev works out of the box; MUST be true in production.
+    auth_cookie_secure: bool = False
+
     # --- App server -----------------------------------------------------------
     host: str = "0.0.0.0"
     port: int = 8000

@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from fastapi_users.db import SQLAlchemyBaseUserTable
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserORM(SQLAlchemyBaseUserTable[int], Base):
+    """One row per account. `id` doubles as the tenant_id used to scope every
+    other table (see persistence/repositories.py) -- one user is one tenant,
+    by design (see the multi-tenant plan's tenant-model decision)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
 
 class StockORM(Base):

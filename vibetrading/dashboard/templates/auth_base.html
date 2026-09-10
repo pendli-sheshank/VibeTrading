@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VibeTrading{% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card card">
+      <div class="brand auth-brand">VibeTrading</div>
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</body>
+</html>

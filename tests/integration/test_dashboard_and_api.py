@@ -10,11 +10,14 @@ from sqlalchemy.pool import StaticPool
 
 from vibetrading.api.app import app
 from vibetrading.api.deps import get_broker, get_db
+from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, SignalSource
 from vibetrading.core.models import Signal, Stock
-from vibetrading.persistence.orm_models import Base
+from vibetrading.persistence.orm_models import Base, UserORM
 from vibetrading.risk.engine import RiskEngine
+
+FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
 
 
 @pytest_asyncio.fixture
@@ -34,6 +37,8 @@ async def api_client():
     broker = MockBrokerClient(seed=11)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_broker] = lambda: broker
+    app.dependency_overrides[current_active_user] = lambda: FAKE_USER
+    app.dependency_overrides[current_dashboard_user] = lambda: FAKE_USER
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

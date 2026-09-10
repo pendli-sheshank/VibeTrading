@@ -10,6 +10,8 @@ EXCLUDED_FIELDS = {
     "port",
     "log_level",
     "app_secrets_key",
+    "auth_secret_key",
+    "auth_cookie_secure",
     "watchlist",
     "vibetrading_kill_switch",
     "vibetrading_kill_switch_mode",

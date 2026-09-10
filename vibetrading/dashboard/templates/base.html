@@ -19,6 +19,9 @@
     </nav>
     {% set dom_id = "nav-mode-control" %}
     {% include "_mode_control.html" %}
+    <form method="post" action="/logout" class="logout-form">
+      <button type="submit" class="btn btn-sm">Log out</button>
+    </form>
   </header>
 
   <main class="content">
