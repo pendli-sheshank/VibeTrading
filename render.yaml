@@ -1,0 +1,108 @@
+# Render Blueprint -- https://render.com/docs/blueprint-spec
+#
+# Maps directly onto the plan's Web/Worker split: a horizontally-scaled
+# Web Service serves the dashboard/API and never touches a tenant's
+# lease or scheduler (WORKER_ROLE=web, see config.py and
+# orchestrator/manager.py's manage_leases); a single Background Worker
+# owns every tenant's autonomous trading loop (WORKER_ROLE=worker,
+# scripts/run_worker.py). Both share the same Postgres database and
+# Redis instance -- Redis is what lets a WebSocket on a web replica see
+# an event a scheduler cycle on the worker just published (see
+# orchestrator/event_bus.py / redis_bus.py).
+#
+# This file describes the *shape* of a deployment; it does not create one.
+# Actually provisioning a Render account, DNS, and production secrets
+# (DHAN_ACCESS_TOKEN, APP_SECRETS_KEY, AUTH_SECRET_KEY, RISK_TOKEN_SECRET
+# above all -- see .env.example) is a deliberate action to take when
+# ready, not something this repo does on its own. Render's dashboard
+# supports promoting a `main`-tracking service to a separate production
+# environment on your own schedule; this blueprint defines one
+# environment, which you point at whichever branch/tag you're staging or
+# promoting.
+
+services:
+  - type: web
+    name: vibetrading-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    numInstances: 2
+    healthCheckPath: /readyz
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: WORKER_ROLE
+        value: web
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibetrading-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: vibetrading-redis
+          property: connectionString
+      # APP_SECRETS_KEY, AUTH_SECRET_KEY, and RISK_TOKEN_SECRET must be the
+      # SAME value on both this service and vibetrading-worker below --
+      # they share one Postgres database, and APP_SECRETS_KEY in particular
+      # decrypts tenant secrets (Dhan tokens, LLM keys) that whichever
+      # service encrypted them. generateValue: true generates an
+      # independent value PER SERVICE, which would silently desync them
+      # (the worker would fail to decrypt what the web service encrypted,
+      # falling back to defaults with only a log line to notice by) --
+      # sync: false on both instead, set to the same operator-chosen value
+      # in the Render dashboard after this blueprint is applied. Generate
+      # one with `python -c "import secrets; print(secrets.token_hex(32))"`.
+      - key: APP_SECRETS_KEY
+        sync: false
+      - key: AUTH_SECRET_KEY
+        sync: false
+      - key: RISK_TOKEN_SECRET
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: VIBETRADING_EXECUTION_MODE
+        value: paper
+      # Dhan credentials, LLM provider keys, and ALERT_WEBHOOK_URL are
+      # deliberately not templated here -- set them in the Render
+      # dashboard (or per tenant, via the Settings UI) rather than
+      # committing them to this file.
+
+  - type: worker
+    name: vibetrading-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python scripts/run_worker.py
+    plan: starter
+    numInstances: 1
+    envVars:
+      - key: WORKER_ROLE
+        value: worker
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibetrading-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: vibetrading-redis
+          property: connectionString
+      # Must match vibetrading-web's APP_SECRETS_KEY / AUTH_SECRET_KEY /
+      # RISK_TOKEN_SECRET exactly -- see that service's comment above.
+      - key: APP_SECRETS_KEY
+        sync: false
+      - key: AUTH_SECRET_KEY
+        sync: false
+      - key: RISK_TOKEN_SECRET
+        sync: false
+      - key: VIBETRADING_EXECUTION_MODE
+        value: paper
+
+databases:
+  - name: vibetrading-db
+    plan: starter
+    postgresMajorVersion: "16"
+
+  - name: vibetrading-redis
+    type: keyvalue
+    plan: starter
+    ipAllowList: []

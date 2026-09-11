@@ -35,12 +35,14 @@ class TradingPipeline:
 
     def __init__(
         self,
+        tenant_id: int,
         research_agent: ResearchAgent,
         technical_agent: TechnicalAgent,
         strategy_agent: StrategyAgent,
         risk_engine: RiskEngine,
         freshness_window: timedelta = DEFAULT_FRESHNESS_WINDOW,
     ):
+        self.tenant_id = tenant_id
         self.research_agent = research_agent
         self.technical_agent = technical_agent
         self.strategy_agent = strategy_agent
@@ -49,7 +51,7 @@ class TradingPipeline:
 
     async def run_research_cycle(self, session: AsyncSession, stock: Stock) -> AgentOutput:
         output = await self.research_agent.analyze(stock, context={})
-        await save_agent_output(session, output)
+        await save_agent_output(session, self.tenant_id, output)
         await session.commit()
         await event_bus.publish(
             {
@@ -57,13 +59,14 @@ class TradingPipeline:
                 "agent_type": AgentType.RESEARCH.value,
                 "stock_symbol": stock.symbol,
                 "confidence": output.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         return output
 
     async def run_technical_cycle(self, session: AsyncSession, stock: Stock) -> AgentOutput:
         output = await self.technical_agent.analyze(stock, context={})
-        await save_agent_output(session, output)
+        await save_agent_output(session, self.tenant_id, output)
         await session.commit()
         await event_bus.publish(
             {
@@ -71,14 +74,15 @@ class TradingPipeline:
                 "agent_type": AgentType.TECHNICAL.value,
                 "stock_symbol": stock.symbol,
                 "confidence": output.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         return output
 
     async def _fresh_latest_output(
         self, session: AsyncSession, stock: Stock, agent_type: AgentType
     ) -> AgentOutput | None:
-        orm = await get_latest_agent_output(session, stock.symbol, agent_type.value)
+        orm = await get_latest_agent_output(session, self.tenant_id, stock.symbol, agent_type.value)
         if orm is None:
             return None
         age = datetime.now(UTC) - orm.timestamp.replace(tzinfo=UTC)
@@ -101,7 +105,7 @@ class TradingPipeline:
         outputs = [technical_output] + ([research_output] if research_output else [])
 
         signal = await self.strategy_agent.synthesize(stock, outputs)
-        signal_orm = await save_signal(session, signal)
+        signal_orm = await save_signal(session, self.tenant_id, signal)
         await session.flush()
 
         await event_bus.publish(
@@ -110,7 +114,8 @@ class TradingPipeline:
                 "stock_symbol": stock.symbol,
                 "action": signal.action.value,
                 "confidence": signal.confidence,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
 
         result = await self.risk_engine.approve_and_execute(session, signal, stock, signal_id=signal_orm.id)
@@ -122,7 +127,8 @@ class TradingPipeline:
                 "stock_symbol": stock.symbol,
                 "approved": result.approved,
                 "reasons": result.risk_check.reasons,
-            }
+            },
+            tenant_id=self.tenant_id,
         )
         if result.order_result is not None:
             await event_bus.publish(
@@ -131,7 +137,8 @@ class TradingPipeline:
                     "stock_symbol": stock.symbol,
                     "order_id": result.order_result.order_id,
                     "status": result.order_result.status.value,
-                }
+                },
+                tenant_id=self.tenant_id,
             )
 
         return result

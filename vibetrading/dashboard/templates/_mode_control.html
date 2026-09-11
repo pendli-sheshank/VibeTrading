@@ -1,9 +1,8 @@
-{% set live_settings = get_settings() %}
 <div class="mode-control" id="{{ dom_id }}">
-  <span class="mode-badge mode-{{ live_settings.vibetrading_execution_mode.value }}">
-    {{ live_settings.vibetrading_execution_mode.value | upper }} MODE
+  <span class="mode-badge mode-{{ settings.vibetrading_execution_mode.value }}">
+    {{ settings.vibetrading_execution_mode.value | upper }} MODE
   </span>
-  {% if live_settings.is_live_mode %}
+  {% if settings.is_live_mode %}
     <form hx-post="/settings/execution-mode/paper" hx-target="#{{ dom_id }}" hx-swap="outerHTML" class="mode-control-form">
       <input type="hidden" name="dom_id" value="{{ dom_id }}" />
       <button type="submit" class="btn btn-ok btn-sm">Switch to paper</button>

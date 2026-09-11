@@ -80,10 +80,10 @@ async def test_stop_loss_monitor_exits_breached_long_position(db_session):
         opened_at=datetime.now(UTC),
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 90.0})  # below stop
-    risk_engine = RiskEngine(broker=broker, config=make_config())
+    risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
     monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
 
-    queue = event_bus.subscribe()
+    queue = event_bus.subscribe(1)
     try:
         results = await monitor.check_all(db_session)
 
@@ -99,7 +99,7 @@ async def test_stop_loss_monitor_exits_breached_long_position(db_session):
             messages.append(queue.get_nowait())
         assert any(m["type"] == "stop_loss_exit" and m["approved"] for m in messages)
     finally:
-        event_bus.unsubscribe(queue)
+        event_bus.unsubscribe(1, queue)
 
 
 async def test_stop_loss_monitor_ignores_position_within_stop(db_session):
@@ -111,7 +111,7 @@ async def test_stop_loss_monitor_ignores_position_within_stop(db_session):
         opened_at=datetime.now(UTC),
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 98.0})  # above stop
-    risk_engine = RiskEngine(broker=broker, config=make_config())
+    risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
     monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
 
     results = await monitor.check_all(db_session)
@@ -129,7 +129,7 @@ async def test_stop_loss_monitor_exits_breached_short_position(db_session):
         opened_at=datetime.now(UTC),
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"INFY": 105.0})  # above stop for a short
-    risk_engine = RiskEngine(broker=broker, config=make_config())
+    risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
     monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
 
     results = await monitor.check_all(db_session)
@@ -145,7 +145,7 @@ async def test_stop_loss_monitor_ignores_position_without_stop_loss(db_session):
         stock_symbol="TCS", quantity=10, avg_price=100.0, stop_loss_price=None, opened_at=datetime.now(UTC)
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 1.0})
-    risk_engine = RiskEngine(broker=broker, config=make_config())
+    risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
     monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
 
     results = await monitor.check_all(db_session)

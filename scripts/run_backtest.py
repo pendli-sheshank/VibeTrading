@@ -27,11 +27,16 @@ from vibetrading.core.models import Stock
 from vibetrading.llm.router import LLMRouter
 from vibetrading.logging_conf import configure_logging
 from vibetrading.persistence.db import get_session, init_db
+from vibetrading.settings.cache import get_tenant_settings
+from vibetrading.settings.service import load_settings_from_db
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("symbol", help="Stock symbol, e.g. RELIANCE")
+    parser.add_argument(
+        "--tenant-id", type=int, required=True, help="Account (tenant) id to run this backtest and persist results under"
+    )
     parser.add_argument("--start", help="Start date YYYY-MM-DD (default: --days before --end)")
     parser.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
     parser.add_argument("--days", type=int, default=180, help="Backtest window length if --start is omitted")
@@ -53,8 +58,12 @@ async def _main() -> None:
 
     await init_db()
 
-    broker = get_broker_client()
-    llm = LLMRouter().get_adapter(AgentType.STRATEGY)
+    settings = get_tenant_settings(args.tenant_id)
+    async with get_session() as session:
+        await load_settings_from_db(session, args.tenant_id, settings)
+
+    broker = get_broker_client(settings)
+    llm = LLMRouter(settings).get_adapter(AgentType.STRATEGY)
     strategy_agent = StrategyAgent(llm=llm)
     engine = BacktestEngine(broker=broker, strategy_agent=strategy_agent, quantity=args.quantity)
     backtest_agent = BacktestAgent(engine=engine)
@@ -62,7 +71,9 @@ async def _main() -> None:
     stock = Stock(symbol=args.symbol)
 
     async with get_session() as session:
-        result = await backtest_agent.run_and_persist(session, stock, start_date, end_date, warmup_days=args.warmup_days)
+        result = await backtest_agent.run_and_persist(
+            session, args.tenant_id, stock, start_date, end_date, warmup_days=args.warmup_days
+        )
         await session.commit()
 
     print(format_summary(result))

@@ -3,24 +3,21 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests.conftest import make_test_engine, reset_schema, seed_test_users
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.config import Settings
 from vibetrading.core.models import Stock
 from vibetrading.orchestrator.scheduler import build_scheduler
-from vibetrading.persistence.orm_models import Base
 from vibetrading.persistence.repositories import upsert_stock
 
 
 @pytest.fixture
 async def test_engine():
-    engine = create_async_engine(
-        "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    engine = make_test_engine()
+    await reset_schema(engine)
+    await seed_test_users(engine)
     yield engine
     await engine.dispose()
 
@@ -51,13 +48,13 @@ async def test_build_scheduler_resolves_watchlist_from_db_and_registers_jobs(
     original live-trading gap where no security ID was ever populated."""
     session_factory = patch_orchestrator_db_session
     async with session_factory() as session:
-        await upsert_stock(session, Stock(symbol="RELIANCE", dhan_security_id="2885"))
-        await upsert_stock(session, Stock(symbol="TCS"))
+        await upsert_stock(session, 1, Stock(symbol="RELIANCE", dhan_security_id="2885"))
+        await upsert_stock(session, 1, Stock(symbol="TCS"))
         await session.commit()
 
     broker = MockBrokerClient(seed=1)
     settings = Settings(_env_file=None)
-    scheduler = await build_scheduler(broker, settings)
+    scheduler = await build_scheduler(broker, 1, settings)
 
     watchlist_symbols = {s.symbol for s in scheduler.watchlist}
     assert watchlist_symbols == {"RELIANCE", "TCS"}
@@ -79,7 +76,7 @@ async def test_build_scheduler_resolves_watchlist_from_db_and_registers_jobs(
 
 async def test_build_scheduler_empty_watchlist_registers_no_stock_jobs(test_engine, patch_orchestrator_db_session):
     broker = MockBrokerClient(seed=1)
-    scheduler = await build_scheduler(broker, Settings(_env_file=None))
+    scheduler = await build_scheduler(broker, 1, Settings(_env_file=None))
 
     assert scheduler.watchlist == []
 

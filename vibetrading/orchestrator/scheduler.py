@@ -10,15 +10,18 @@ from vibetrading.agents.research.agent import ResearchAgent
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
 from vibetrading.agents.strategy.technical_agent import TechnicalAgent
 from vibetrading.broker.base import BrokerClient
-from vibetrading.config import Settings, get_settings
+from vibetrading.config import Settings
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import Stock
 from vibetrading.llm.router import LLMRouter
+from vibetrading.logging_conf import bind_tenant_id
+from vibetrading.observability.metrics import job_duration_seconds
 from vibetrading.orchestrator.pipeline import TradingPipeline
 from vibetrading.orchestrator.stop_loss_monitor import StopLossMonitor
 from vibetrading.orchestrator.watchlist import get_watchlist
 from vibetrading.persistence.db import get_session
 from vibetrading.risk.engine import RiskEngine
+from vibetrading.settings.cache import get_tenant_settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +38,32 @@ class OrchestratorScheduler:
     so this constructor stays synchronous and doesn't resolve it itself.
     """
 
-    def __init__(self, broker: BrokerClient, watchlist: list[Stock], settings: Settings | None = None):
+    def __init__(
+        self,
+        broker: BrokerClient,
+        tenant_id: int,
+        watchlist: list[Stock],
+        settings: Settings | None = None,
+        fencing_token: int | None = None,
+    ):
         self.broker = broker
-        self.settings = settings or get_settings()
+        self.tenant_id = tenant_id
+        self.settings = settings or get_tenant_settings(tenant_id)
         self.watchlist: list[Stock] = watchlist
 
         llm_router = LLMRouter(self.settings)
-        self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH))
+        self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH), settings=self.settings)
         self.technical_agent = TechnicalAgent(broker=broker)
         self.strategy_agent = StrategyAgent(llm=llm_router.get_adapter(AgentType.STRATEGY))
-        self.risk_engine = RiskEngine(broker=broker, settings=self.settings)
+        # fencing_token: this process's proof of exclusive ownership of
+        # this tenant's trading loop, as of the last successful lease
+        # acquisition/renewal (see orchestrator/lease.py and
+        # orchestrator/manager.py's renewal loop). None means no
+        # distributed enforcement -- single-process dev/test, matching
+        # this class's pre-Phase-20 behavior.
+        self.risk_engine = RiskEngine(broker=broker, tenant_id=tenant_id, settings=self.settings, fencing_token=fencing_token)
         self.pipeline = TradingPipeline(
+            tenant_id=tenant_id,
             research_agent=self.research_agent,
             technical_agent=self.technical_agent,
             strategy_agent=self.strategy_agent,
@@ -137,8 +155,9 @@ class OrchestratorScheduler:
     async def run_research_job(self, stock: Stock) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.pipeline.run_research_cycle(session, stock)
+            with bind_tenant_id(self.tenant_id), job_duration_seconds.labels(job_type="research").time():
+                async with get_session() as session:
+                    await self.pipeline.run_research_cycle(session, stock)
         except Exception:
             logger.exception("Research cycle failed for %s", stock.symbol)
         finally:
@@ -147,9 +166,10 @@ class OrchestratorScheduler:
     async def run_strategy_job(self, stock: Stock) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.pipeline.run_technical_cycle(session, stock)
-                await self.pipeline.run_strategy_cycle(session, stock)
+            with bind_tenant_id(self.tenant_id), job_duration_seconds.labels(job_type="strategy").time():
+                async with get_session() as session:
+                    await self.pipeline.run_technical_cycle(session, stock)
+                    await self.pipeline.run_strategy_cycle(session, stock)
         except Exception:
             logger.exception("Strategy cycle failed for %s", stock.symbol)
         finally:
@@ -158,18 +178,24 @@ class OrchestratorScheduler:
     async def run_stop_loss_monitor_job(self) -> None:
         self._job_started()
         try:
-            async with get_session() as session:
-                await self.stop_loss_monitor.check_all(session)
+            with bind_tenant_id(self.tenant_id), job_duration_seconds.labels(job_type="stop_loss_monitor").time():
+                async with get_session() as session:
+                    await self.stop_loss_monitor.check_all(session)
         except Exception:
             logger.exception("Stop-loss monitor cycle failed")
         finally:
             self._job_finished()
 
 
-async def build_scheduler(broker: BrokerClient, settings: Settings | None = None) -> OrchestratorScheduler:
-    """Resolves the DB-backed watchlist and constructs an OrchestratorScheduler
-    — the async counterpart to the (synchronous) constructor, used by
-    orchestrator/runtime.py wherever a scheduler needs to be (re)built."""
+async def build_scheduler(
+    broker: BrokerClient, tenant_id: int, settings: Settings | None = None, fencing_token: int | None = None
+) -> OrchestratorScheduler:
+    """Resolves the tenant's DB-backed watchlist and constructs an
+    OrchestratorScheduler — the async counterpart to the (synchronous)
+    constructor, used by orchestrator/runtime.py wherever a scheduler needs
+    to be (re)built."""
     async with get_session() as session:
-        watchlist = await get_watchlist(session)
-    return OrchestratorScheduler(broker=broker, watchlist=watchlist, settings=settings)
+        watchlist = await get_watchlist(session, tenant_id)
+    return OrchestratorScheduler(
+        broker=broker, tenant_id=tenant_id, watchlist=watchlist, settings=settings, fencing_token=fencing_token
+    )

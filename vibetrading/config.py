@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -58,6 +59,35 @@ class Settings(BaseSettings):
 
     # --- Database --------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./vibetrading.db"
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+
+    # --- Cross-worker realtime fan-out (Redis) -----------------------------
+    # None (the default) means "in-process fan-out only" -- every existing
+    # dev/test path and the single-process deployment model both work with
+    # zero Redis dependency. Set only when running >1 API/worker replica,
+    # so a WebSocket connected to one replica sees events published by a
+    # scheduler running in another.
+    redis_url: str | None = None
+
+    # --- Alerting -----------------------------------------------------------
+    # None (the default) means alerts are logged only, never sent anywhere
+    # -- every dev/test path needs zero external dependency. Set to a
+    # Slack incoming-webhook URL (or any endpoint accepting {"text": ...})
+    # to also push a message there when a circuit breaker opens.
+    alert_webhook_url: str | None = None
+
+    # --- Deployment topology -------------------------------------------------
+    # "all" (the default): this one process both serves the dashboard/API
+    # AND owns tenants' autonomous trading loops -- the single-service
+    # deployment model this app has always run as, and what every
+    # dev/test path assumes. Render's Web Service and Background Worker
+    # (see render.yaml) instead each set this explicitly: "web" replicas
+    # never compete for a tenant lease or run a scheduler (dashboard/API
+    # reads only); "worker" replicas own every tenant's lease/scheduler
+    # but serve no HTTP traffic. See orchestrator/manager.py's
+    # manage_leases and api/app.py's lifespan.
+    worker_role: Literal["all", "web", "worker"] = "all"
 
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True
@@ -73,6 +103,15 @@ class Settings(BaseSettings):
     risk_mandatory_stop_loss_pct: float = 0.03
     risk_min_signal_confidence: float = 0.65
     risk_max_total_exposure_pct: float = 0.50
+
+    # --- Auth -----------------------------------------------------------------
+    # Signs session cookies (JWT) minted on login. MUST be overridden with a
+    # real random secret before running with real user accounts — same
+    # insecure-default convention as risk_token_secret/app_secrets_key.
+    auth_secret_key: str = "dev-insecure-auth-secret-change-me"
+    # Cookies are only ever sent over HTTPS when true. Defaults off so local
+    # http://localhost dev works out of the box; MUST be true in production.
+    auth_cookie_secure: bool = False
 
     # --- App server -----------------------------------------------------------
     host: str = "0.0.0.0"

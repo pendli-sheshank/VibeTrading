@@ -24,13 +24,19 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    # render_as_batch=True: SQLite (our dev/test dialect) can't ALTER a
+    # table's primary key or constraints in place -- batch mode has Alembic
+    # recreate the table under the hood instead. Harmless on Postgres
+    # (Phase 19's target dialect), where batch mode just emits the direct
+    # ALTER TABLE it would have anyway.
+    context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
     with context.begin_transaction():
         context.run_migrations()
 

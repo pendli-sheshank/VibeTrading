@@ -70,7 +70,8 @@ class StopLossMonitor:
                     "approved": result.approved,
                     "ltp": ltp,
                     "stop_loss_price": position.stop_loss_price,
-                }
+                },
+                tenant_id=self.risk_engine.tenant_id,
             )
             results.append(result)
 

@@ -6,10 +6,18 @@ from vibetrading.settings.registry import SECTIONS, SETTINGS_REGISTRY, fields_in
 
 EXCLUDED_FIELDS = {
     "database_url",
+    "database_pool_size",
+    "database_max_overflow",
+    "redis_url",
+    "alert_webhook_url",
+    "worker_role",
     "host",
     "port",
     "log_level",
     "app_secrets_key",
+    "auth_secret_key",
+    "auth_cookie_secure",
+    "risk_token_secret",
     "watchlist",
     "vibetrading_kill_switch",
     "vibetrading_kill_switch_mode",
@@ -44,7 +52,7 @@ def test_risk_limits_section_matches_what_risk_config_reads():
     the Risk Agent actually reads.
     """
     risk_limit_keys = {f.key for f in fields_in_section("risk_limits")}
-    expected = {k for k in Settings.model_fields if k.startswith("risk_") and k != "risk_token_secret"}
+    expected = {k for k in Settings.model_fields if k.startswith("risk_") and k not in EXCLUDED_FIELDS}
     assert risk_limit_keys == expected
 
     # And every one of those keys is a real RiskConfig.from_settings() input.
@@ -63,7 +71,6 @@ def test_default_matches_settings_class_default():
 
 def test_secret_fields_are_marked():
     expected_secrets = {
-        "risk_token_secret",
         "dhan_access_token",
         "anthropic_api_key",
         "openai_api_key",

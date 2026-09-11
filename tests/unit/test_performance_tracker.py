@@ -27,7 +27,7 @@ def make_signal(action: ActionType, reference_price: float = 100.0, quantity: in
 
 
 async def test_reconcile_buy_signal_profit(db_session):
-    orm_signal = await save_signal(db_session, make_signal(ActionType.BUY, reference_price=100.0))
+    orm_signal = await save_signal(db_session, 1, make_signal(ActionType.BUY, reference_price=100.0))
     await db_session.flush()
 
     await reconcile_signal_performance(db_session, orm_signal, current_price=110.0)
@@ -37,7 +37,7 @@ async def test_reconcile_buy_signal_profit(db_session):
 
 
 async def test_reconcile_sell_signal_profit_on_price_drop(db_session):
-    orm_signal = await save_signal(db_session, make_signal(ActionType.SELL, reference_price=100.0))
+    orm_signal = await save_signal(db_session, 1, make_signal(ActionType.SELL, reference_price=100.0))
     await db_session.flush()
 
     await reconcile_signal_performance(db_session, orm_signal, current_price=90.0)
@@ -46,7 +46,7 @@ async def test_reconcile_sell_signal_profit_on_price_drop(db_session):
 
 
 async def test_reconcile_hold_signal_is_neutral(db_session):
-    orm_signal = await save_signal(db_session, make_signal(ActionType.HOLD, reference_price=100.0))
+    orm_signal = await save_signal(db_session, 1, make_signal(ActionType.HOLD, reference_price=100.0))
     await db_session.flush()
 
     await reconcile_signal_performance(db_session, orm_signal, current_price=150.0)
@@ -55,21 +55,21 @@ async def test_reconcile_hold_signal_is_neutral(db_session):
 
 
 async def test_performance_summary_win_rate(db_session):
-    win = await save_signal(db_session, make_signal(ActionType.BUY, reference_price=100.0))
-    loss = await save_signal(db_session, make_signal(ActionType.BUY, reference_price=100.0))
+    win = await save_signal(db_session, 1, make_signal(ActionType.BUY, reference_price=100.0))
+    loss = await save_signal(db_session, 1, make_signal(ActionType.BUY, reference_price=100.0))
     await db_session.flush()
 
     await reconcile_signal_performance(db_session, win, current_price=120.0)
     await reconcile_signal_performance(db_session, loss, current_price=90.0)
     await db_session.commit()
 
-    summary = await get_performance_summary(db_session, "INFY")
+    summary = await get_performance_summary(db_session, 1, "INFY")
     assert summary["total_signals"] == 2
     assert summary["win_rate"] == pytest.approx(0.5)
     assert summary["total_pnl"] == pytest.approx((20.0 * 10) + (-10.0 * 10))
 
 
 async def test_performance_summary_empty_when_no_signals(db_session):
-    summary = await get_performance_summary(db_session, "NOSUCHSTOCK")
+    summary = await get_performance_summary(db_session, 1, "NOSUCHSTOCK")
     assert summary["total_signals"] == 0
     assert summary["win_rate"] is None

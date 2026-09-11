@@ -5,25 +5,26 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests.conftest import make_test_engine, reset_schema, seed_test_users
 from vibetrading.api.app import app
 from vibetrading.api.deps import get_broker, get_db
+from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, SignalSource
 from vibetrading.core.models import Signal, Stock
-from vibetrading.persistence.orm_models import Base
+from vibetrading.persistence.orm_models import UserORM
 from vibetrading.risk.engine import RiskEngine
+
+FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
 
 
 @pytest_asyncio.fixture
 async def api_client():
-    engine = create_async_engine(
-        "sqlite+aiosqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    engine = make_test_engine()
+    await reset_schema(engine)
+    await seed_test_users(engine)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -34,6 +35,8 @@ async def api_client():
     broker = MockBrokerClient(seed=11)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_broker] = lambda: broker
+    app.dependency_overrides[current_active_user] = lambda: FAKE_USER
+    app.dependency_overrides[current_dashboard_user] = lambda: FAKE_USER
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -50,7 +53,7 @@ async def test_kill_switch_endpoint_blocks_next_risk_engine_call(api_client):
     assert response.status_code == 200
     assert response.json()["kill_switch_active"] is True
 
-    engine = RiskEngine(broker=broker)
+    engine = RiskEngine(broker=broker, tenant_id=FAKE_USER.id)
     signal = Signal(
         stock_symbol="TCS",
         timestamp=datetime.now(UTC),
@@ -76,7 +79,7 @@ async def test_dashboard_kill_switch_toggle_flips_state_and_next_call_rejected(a
     assert response.status_code == 200
     assert "ACTIVE" in response.text
 
-    engine = RiskEngine(broker=broker)
+    engine = RiskEngine(broker=broker, tenant_id=FAKE_USER.id)
     signal = Signal(
         stock_symbol="INFY",
         timestamp=datetime.now(UTC),

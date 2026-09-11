@@ -5,15 +5,18 @@ import logging
 
 from vibetrading.broker.base import BrokerClient
 from vibetrading.broker.factory import get_broker_client
-from vibetrading.config import Settings, get_settings
+from vibetrading.config import Settings
 from vibetrading.orchestrator.scheduler import OrchestratorScheduler, build_scheduler
+from vibetrading.persistence.db import get_session
+from vibetrading.settings.cache import get_tenant_settings
 from vibetrading.settings.registry import fields_in_section
+from vibetrading.settings.service import load_settings_from_db
 
 logger = logging.getLogger(__name__)
 
 
 class OrchestratorRuntime:
-    """Owns the process's current broker + OrchestratorScheduler and can
+    """Owns one tenant's current broker + OrchestratorScheduler and can
     rebuild both on demand — e.g. after a settings change to execution
     mode, Dhan credentials, watchlist, scheduling intervals, or LLM
     provider, all of which are "baked in" at construction time in ways
@@ -21,16 +24,25 @@ class OrchestratorRuntime:
     once, APScheduler jobs fix their interval at registration, agents
     capture a concrete LLMAdapter once).
 
-    Stashed on app.state.runtime (not a module-level singleton), so tests
-    can build isolated runtimes without process-global state leaking
-    between them.
+    One instance per tenant, held by orchestrator.manager.MultiTenantRuntimeManager
+    (see that module) rather than a module-level singleton, so tests can
+    build isolated runtimes without process-global state leaking between
+    them.
     """
 
-    def __init__(self, settings: Settings | None = None):
-        self._settings = settings or get_settings()
+    def __init__(self, tenant_id: int, settings: Settings | None = None):
+        self.tenant_id = tenant_id
+        self._settings = settings or get_tenant_settings(tenant_id)
         self._broker: BrokerClient | None = None
         self._scheduler: OrchestratorScheduler | None = None
         self._lock = asyncio.Lock()
+        # Lease state (see orchestrator/lease.py + manager.py's renewal
+        # loop). Defaults to "held, no fencing token" -- a single-process
+        # deployment with no MultiTenantRuntimeManager renewal loop driving
+        # it (e.g. most tests) behaves exactly as it did before Phase 20:
+        # the scheduler runs whenever enable_scheduler does, unfenced.
+        self._has_lease = True
+        self._fencing_token: int | None = None
 
     @property
     def broker(self) -> BrokerClient:
@@ -44,6 +56,20 @@ class OrchestratorRuntime:
 
     async def start(self) -> None:
         async with self._lock:
+            # Only start() reloads from DB -- this tenant's very first
+            # build in this process needs it (get_tenant_settings() just
+            # constructs class defaults, it doesn't know about anything
+            # saved earlier). restart() deliberately does NOT reload here:
+            # every real restart() call is triggered right after
+            # save_settings() already refreshed self._settings from DB, so
+            # reloading again would be redundant at best -- and at worst
+            # would silently revert an in-memory-only settings mutation
+            # that was never meant to be persisted (this is also what
+            # keeps tests that poke `settings.some_field = ...` directly,
+            # without a full save_settings() round-trip, behaving as
+            # written).
+            async with get_session() as session:
+                await load_settings_from_db(session, self.tenant_id, self._settings)
             self._broker, self._scheduler = await self._build()
             if self._scheduler is not None:
                 self._scheduler.start()
@@ -88,11 +114,27 @@ class OrchestratorRuntime:
         async with self._lock:
             await self._shutdown_locked()
 
+    async def set_lease(self, held: bool, fencing_token: int | None) -> None:
+        """Called by MultiTenantRuntimeManager's renewal loop after each
+        lease acquire/renew attempt. A no-op if nothing actually changed
+        (a routine successful renewal keeps the same fencing_token); a
+        transition -- newly acquired, lost, or handed to a new fencing
+        generation -- triggers restart() so the scheduler (if any) is
+        rebuilt against the current lease state. Before start() has ever
+        run, this only updates the stored state; the next start()/restart()
+        picks it up naturally.
+        """
+        changed = held != self._has_lease or fencing_token != self._fencing_token
+        self._has_lease = held
+        self._fencing_token = fencing_token
+        if changed and self._broker is not None:
+            await self.restart()
+
     async def _build(self) -> tuple[BrokerClient, OrchestratorScheduler | None]:
         broker = get_broker_client(self._settings)
         scheduler = None
-        if self._settings.enable_scheduler:
-            scheduler = await build_scheduler(broker, self._settings)
+        if self._settings.enable_scheduler and self._has_lease:
+            scheduler = await build_scheduler(broker, self.tenant_id, self._settings, fencing_token=self._fencing_token)
         return broker, scheduler
 
     async def _shutdown_locked(self) -> None:

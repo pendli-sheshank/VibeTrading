@@ -7,12 +7,14 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.api.deps import get_db, get_runtime
-from vibetrading.config import get_settings
+from vibetrading.auth.backend import current_dashboard_user
 from vibetrading.core.models import Stock
 from vibetrading.dashboard.templating import templates
 from vibetrading.orchestrator.runtime import OrchestratorRuntime, should_restart
+from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import delete_stock, list_stocks, upsert_stock
 from vibetrading.risk.config import RiskConfig
+from vibetrading.settings.cache import get_tenant_settings
 from vibetrading.settings.registry import SECTIONS, fields_in_section
 from vibetrading.settings.service import clear_secret, save_settings
 
@@ -26,8 +28,8 @@ router = APIRouter(include_in_schema=False)
 _MODE_KEY = "vibetrading_execution_mode"
 
 
-def _mode() -> str:
-    return get_settings().vibetrading_execution_mode.value
+def _mode(tenant_id: int) -> str:
+    return get_tenant_settings(tenant_id).vibetrading_execution_mode.value
 
 
 def _stock_from_form(symbol: str, form) -> Stock:
@@ -66,11 +68,11 @@ async def _try_restart(runtime: OrchestratorRuntime) -> PlainTextResponse | None
     return None
 
 
-async def _settings_context(session: AsyncSession) -> dict[str, Any]:
-    settings = get_settings()
-    stocks = await list_stocks(session)
+async def _settings_context(session: AsyncSession, tenant_id: int) -> dict[str, Any]:
+    settings = get_tenant_settings(tenant_id)
+    stocks = await list_stocks(session, tenant_id)
     return {
-        "mode": _mode(),
+        "mode": _mode(tenant_id),
         "active_page": "settings",
         "settings": settings,
         "stocks": stocks,
@@ -85,8 +87,10 @@ async def _settings_context(session: AsyncSession) -> dict[str, Any]:
 
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, session: AsyncSession = Depends(get_db)):
-    ctx = await _settings_context(session)
+async def settings_page(
+    request: Request, session: AsyncSession = Depends(get_db), user: UserORM = Depends(current_dashboard_user)
+):
+    ctx = await _settings_context(session, user.id)
     return templates.TemplateResponse(request, "settings.html", ctx)
 
 
@@ -96,6 +100,7 @@ async def save_settings_section(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
     if section not in SECTIONS:
         return PlainTextResponse("Unknown settings section.", status_code=404)
@@ -108,7 +113,7 @@ async def save_settings_section(
 
     for field in fields:
         if field.secret and form.get(f"clear__{field.key}") == "on":
-            await clear_secret(session, field.key)
+            await clear_secret(session, user.id, field.key)
             changed_keys.add(field.key)
             continue
 
@@ -131,7 +136,7 @@ async def save_settings_section(
         except ValueError:
             continue  # unparseable input -> leave that one field unchanged rather than 500
 
-    changed_keys |= await save_settings(session, updates)
+    changed_keys |= await save_settings(session, user.id, updates)
     await session.commit()
 
     if should_restart(changed_keys):
@@ -139,19 +144,25 @@ async def save_settings_section(
         if error is not None:
             return error
 
-    ctx = await _settings_context(session)
+    ctx = await _settings_context(session, user.id)
     return templates.TemplateResponse(request, f"_settings_{section}.html", ctx)
 
 
 @router.get("/settings/mode-control", response_class=HTMLResponse)
-async def mode_control(request: Request, dom_id: str = "nav-mode-control"):
-    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id})
+async def mode_control(request: Request, dom_id: str = "nav-mode-control", user: UserORM = Depends(current_dashboard_user)):
+    settings = get_tenant_settings(user.id)
+    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id, "settings": settings})
 
 
 @router.get("/settings/mode-control/live-confirm", response_class=HTMLResponse)
-async def mode_control_live_confirm(request: Request, dom_id: str = "nav-mode-control"):
-    config = RiskConfig.from_settings(get_settings())
-    return templates.TemplateResponse(request, "_mode_live_confirm.html", {"dom_id": dom_id, "config": config})
+async def mode_control_live_confirm(
+    request: Request, dom_id: str = "nav-mode-control", user: UserORM = Depends(current_dashboard_user)
+):
+    settings = get_tenant_settings(user.id)
+    config = RiskConfig.from_settings(settings)
+    return templates.TemplateResponse(
+        request, "_mode_live_confirm.html", {"dom_id": dom_id, "config": config, "settings": settings}
+    )
 
 
 @router.post("/settings/execution-mode/paper", response_class=HTMLResponse)
@@ -159,18 +170,20 @@ async def switch_to_paper(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
     form = await request.form()
     dom_id = form.get("dom_id", "nav-mode-control")
 
-    changed = await save_settings(session, {_MODE_KEY: "paper"})
+    changed = await save_settings(session, user.id, {_MODE_KEY: "paper"})
     await session.commit()
     if should_restart(changed):
         error = await _try_restart(runtime)
         if error is not None:
             return error
 
-    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id})
+    settings = get_tenant_settings(user.id)
+    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id, "settings": settings})
 
 
 @router.post("/settings/execution-mode/live", response_class=HTMLResponse)
@@ -178,6 +191,7 @@ async def switch_to_live(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
     """The one server-side-enforced gate for entering live trading: a save
     that flips vibetrading_execution_mode to "live" is only ever applied
@@ -192,14 +206,15 @@ async def switch_to_live(
     if form.get("confirm_live") != "yes":
         return PlainTextResponse("Switching to live mode requires explicit confirmation.", status_code=400)
 
-    changed = await save_settings(session, {_MODE_KEY: "live"})
+    changed = await save_settings(session, user.id, {_MODE_KEY: "live"})
     await session.commit()
     if should_restart(changed):
         error = await _try_restart(runtime)
         if error is not None:
             return error
 
-    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id})
+    settings = get_tenant_settings(user.id)
+    return templates.TemplateResponse(request, "_mode_control.html", {"dom_id": dom_id, "settings": settings})
 
 
 @router.post("/settings/watchlist/add", response_class=HTMLResponse)
@@ -207,19 +222,20 @@ async def watchlist_add(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
     form = await request.form()
     symbol = str(form.get("symbol", "")).strip()
     if not symbol:
         return PlainTextResponse("A stock symbol is required.", status_code=400)
 
-    await upsert_stock(session, _stock_from_form(symbol, form))
+    await upsert_stock(session, user.id, _stock_from_form(symbol, form))
     await session.commit()
     error = await _try_restart(runtime)
     if error is not None:
         return error
 
-    ctx = await _settings_context(session)
+    ctx = await _settings_context(session, user.id)
     return templates.TemplateResponse(request, "_settings_watchlist.html", ctx)
 
 
@@ -229,15 +245,16 @@ async def watchlist_update(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
     form = await request.form()
-    await upsert_stock(session, _stock_from_form(symbol, form))
+    await upsert_stock(session, user.id, _stock_from_form(symbol, form))
     await session.commit()
     error = await _try_restart(runtime)
     if error is not None:
         return error
 
-    ctx = await _settings_context(session)
+    ctx = await _settings_context(session, user.id)
     return templates.TemplateResponse(request, "_settings_watchlist.html", ctx)
 
 
@@ -247,12 +264,13 @@ async def watchlist_delete(
     request: Request,
     session: AsyncSession = Depends(get_db),
     runtime: OrchestratorRuntime = Depends(get_runtime),
+    user: UserORM = Depends(current_dashboard_user),
 ):
-    await delete_stock(session, symbol)
+    await delete_stock(session, user.id, symbol)
     await session.commit()
     error = await _try_restart(runtime)
     if error is not None:
         return error
 
-    ctx = await _settings_context(session)
+    ctx = await _settings_context(session, user.id)
     return templates.TemplateResponse(request, "_settings_watchlist.html", ctx)

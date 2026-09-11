@@ -1,64 +1,103 @@
 <section class="card" id="settings-watchlist">
   <h2>Watchlist</h2>
-  <p class="muted">
+  <p class="settings-section-desc">
     DhanBrokerClient can only place orders for a stock once its Dhan security ID is set here
     (e.g. from Dhan's published instrument master).
   </p>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Symbol</th>
-        <th>Exchange</th>
-        <th>Dhan Security ID</th>
-        <th>Name</th>
-        <th>Sector</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for stock in stocks %}
-      <tr>
-        <td>{{ stock.symbol }}</td>
-        <td><input type="text" name="exchange" value="{{ stock.exchange }}" /></td>
-        <td><input type="text" name="dhan_security_id" value="{{ stock.dhan_security_id or '' }}" /></td>
-        <td><input type="text" name="name" value="{{ stock.name or '' }}" /></td>
-        <td><input type="text" name="sector" value="{{ stock.sector or '' }}" /></td>
-        <td>
-          <button
-            type="button"
-            class="btn btn-primary btn-sm"
-            hx-post="/settings/watchlist/update/{{ stock.symbol }}"
-            hx-include="closest tr"
-            hx-target="#settings-watchlist"
-            hx-swap="outerHTML"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            class="btn btn-danger btn-sm"
-            hx-post="/settings/watchlist/delete/{{ stock.symbol }}"
-            hx-target="#settings-watchlist"
-            hx-swap="outerHTML"
-            hx-confirm="Remove {{ stock.symbol }} from the watchlist?"
-          >
-            Remove
-          </button>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="muted">No stocks in the watchlist.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 
-  <h3>Add a stock</h3>
-  <form class="inline-form" hx-post="/settings/watchlist/add" hx-target="#settings-watchlist" hx-swap="outerHTML">
-    <label>Symbol <input type="text" name="symbol" required /></label>
-    <label>Exchange <input type="text" name="exchange" value="NSE" /></label>
-    <label>Dhan Security ID <input type="text" name="dhan_security_id" /></label>
-    <label>Name <input type="text" name="name" /></label>
-    <label>Sector <input type="text" name="sector" /></label>
-    <button type="submit" class="btn btn-primary">Add</button>
-  </form>
+  <div class="settings-table-wrap">
+    <table class="settings-watchlist-table">
+      <colgroup>
+        <col class="col-symbol" />
+        <col class="col-exchange" />
+        <col />
+        <col />
+        <col />
+        <col class="col-actions" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Exchange</th>
+          <th>Dhan Security ID</th>
+          <th>Name</th>
+          <th>Sector</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in stocks %}
+        <tr>
+          <td><span class="settings-symbol">{{ stock.symbol }}</span></td>
+          <td><input type="text" name="exchange" value="{{ stock.exchange }}" /></td>
+          <td>
+            <input
+              type="text"
+              name="dhan_security_id"
+              value="{{ stock.dhan_security_id or '' }}"
+              placeholder="e.g. 2885"
+            />
+          </td>
+          <td><input type="text" name="name" value="{{ stock.name or '' }}" /></td>
+          <td><input type="text" name="sector" value="{{ stock.sector or '' }}" /></td>
+          <td class="settings-actions">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              hx-post="/settings/watchlist/update/{{ stock.symbol }}"
+              hx-include="closest tr"
+              hx-target="#settings-watchlist"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger btn-sm"
+              hx-post="/settings/watchlist/delete/{{ stock.symbol }}"
+              hx-target="#settings-watchlist"
+              hx-swap="outerHTML"
+              hx-confirm="Remove {{ stock.symbol }} from the watchlist?"
+              hx-disabled-elt="this"
+            >
+              Remove
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No stocks in the watchlist.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="settings-add-stock">
+    <h3>Add a stock</h3>
+    <form hx-post="/settings/watchlist/add" hx-target="#settings-watchlist" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      <div class="settings-grid">
+        <label class="settings-field">
+          <span>Symbol</span>
+          <input type="text" name="symbol" required maxlength="20" style="text-transform: uppercase" />
+        </label>
+        <label class="settings-field">
+          <span>Exchange</span>
+          <input type="text" name="exchange" value="NSE" />
+        </label>
+        <label class="settings-field">
+          <span>Dhan Security ID</span>
+          <input type="text" name="dhan_security_id" placeholder="e.g. 2885" />
+        </label>
+        <label class="settings-field">
+          <span>Name</span>
+          <input type="text" name="name" />
+        </label>
+        <label class="settings-field">
+          <span>Sector</span>
+          <input type="text" name="sector" />
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+  </div>
 </section>

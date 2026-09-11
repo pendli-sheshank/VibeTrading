@@ -1,10 +1,16 @@
 {% import "_settings_field_macros.html" as macros %}
 <section class="card" id="settings-llm">
   <h2>LLM</h2>
+  <p class="settings-section-desc">
+    Provider and API key used by the Research and Strategy agents. No key configured runs every
+    agent against a safe mock.
+  </p>
   <form hx-post="/settings/save/llm" hx-target="#settings-llm" hx-swap="outerHTML">
-    {% for field in sections.llm %}
-      {{ macros.render_field(field, settings) }}
-    {% endfor %}
+    <div class="settings-grid">
+      {% for field in sections.llm %}
+        {{ macros.render_field(field, settings) }}
+      {% endfor %}
+    </div>
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
 </section>

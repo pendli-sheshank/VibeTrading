@@ -1,8 +1,7 @@
-{% set live_settings = get_settings() %}
 <div class="mode-control mode-control-confirm" id="{{ dom_id }}">
   <p class="mode-confirm-warning">
     <strong>Switching to LIVE trading places real orders with no per-trade approval.</strong>
-    {% if not live_settings.has_dhan_credentials %}
+    {% if not settings.has_dhan_credentials %}
     <br />
     <span class="badge badge-danger">
       No Dhan credentials configured yet — live mode will have no working broker until you add

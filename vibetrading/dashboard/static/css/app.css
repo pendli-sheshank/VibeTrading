@@ -126,6 +126,16 @@ table { width: 100%; border-collapse: collapse; }
 
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
+.settings-section-desc { color: var(--muted); font-size: 13px; margin: -6px 0 16px; max-width: 640px; }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+  margin-bottom: 16px;
+}
+@media (max-width: 720px) { .settings-grid { grid-template-columns: 1fr; } }
+
 .settings-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
 .settings-field input[type="text"],
 .settings-field input[type="password"],
@@ -136,11 +146,68 @@ table { width: 100%; border-collapse: collapse; }
   border: 1px solid var(--border);
   background: #0c111c;
   color: var(--text);
-  max-width: 360px;
+  width: 100%;
 }
 .settings-field input[type="checkbox"] { width: fit-content; }
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-watchlist-table input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,140,255,0.18);
+}
 .settings-clear { font-size: 12px; }
 .settings-clear label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+
+.settings-table-wrap { overflow-x: auto; margin-bottom: 20px; }
+.settings-watchlist-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.settings-watchlist-table th, .settings-watchlist-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  vertical-align: middle;
+}
+.settings-watchlist-table th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.settings-watchlist-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+.settings-watchlist-table .settings-symbol { font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings-watchlist-table col.col-symbol { width: 12%; }
+.settings-watchlist-table col.col-exchange { width: 10%; }
+.settings-watchlist-table col.col-actions { width: 16%; }
+.settings-watchlist-table input { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: #0c111c; color: var(--text); }
+.settings-watchlist-table td.settings-actions { text-align: right; white-space: nowrap; }
+.settings-watchlist-table td.settings-actions .btn { margin-left: 6px; }
+/* The table scrolls horizontally under ~640px (see .settings-table-wrap) --
+   pin the actions column so Save/Remove stay reachable without having to
+   scroll all the way right past every input first. */
+.settings-watchlist-table th:last-child,
+.settings-watchlist-table td.settings-actions {
+  position: sticky;
+  right: 0;
+  background: var(--panel);
+  box-shadow: -8px 0 8px -8px rgba(0,0,0,0.4);
+}
+
+.settings-add-stock {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 4px;
+}
+.settings-add-stock h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-card { width: 100%; max-width: 380px; }
+.auth-brand { margin-bottom: 8px; }
+.auth-form { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.auth-form .btn { margin-top: 8px; }
+.auth-footer { margin-top: 16px; text-align: center; }
+.logout-form { display: inline; }
 
 .ws-indicator {
   position: fixed;

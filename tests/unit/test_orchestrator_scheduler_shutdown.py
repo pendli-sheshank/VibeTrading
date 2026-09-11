@@ -12,7 +12,9 @@ from vibetrading.orchestrator.scheduler import OrchestratorScheduler
 
 @pytest.fixture
 async def scheduler():
-    sched = OrchestratorScheduler(broker=MockBrokerClient(seed=1), watchlist=[], settings=Settings(_env_file=None))
+    sched = OrchestratorScheduler(
+        broker=MockBrokerClient(seed=1), tenant_id=1, watchlist=[], settings=Settings(_env_file=None)
+    )
     sched.start()
     yield sched
     if sched.scheduler.running:

@@ -1,0 +1,24 @@
+{% extends "auth_base.html" %}
+{% block title %} — Create account{% endblock %}
+{% block content %}
+<h1>Create account</h1>
+
+{% if error %}
+<p class="badge badge-danger">{{ error }}</p>
+{% endif %}
+
+<form method="post" action="/register" class="auth-form">
+  <label class="settings-field">
+    <span>Email</span>
+    <input type="email" name="email" required autofocus />
+  </label>
+  <label class="settings-field">
+    <span>Password</span>
+    <input type="password" name="password" required minlength="8" />
+    <small class="muted">At least 8 characters.</small>
+  </label>
+  <button type="submit" class="btn btn-primary">Create account</button>
+</form>
+
+<p class="muted auth-footer">Already have an account? <a href="/login">Sign in</a></p>
+{% endblock %}
