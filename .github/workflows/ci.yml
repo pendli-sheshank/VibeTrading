@@ -103,13 +103,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # A Docker image tag must be all-lowercase, but github.repository
+      # preserves the repo's actual case (pendli-sheshank/VibeTrading) --
+      # used directly, buildx rejects the tag outright ("repository name
+      # must be lowercase") before ever attempting the build. Only
+      # surfaces on a real push to main, since this job never runs on a
+      # PR (see the `if:` above) -- missed until the first push after this
+      # job was added.
+      - name: Lowercase image repository name
+        run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_REPO }}:latest
+            ghcr.io/${{ env.IMAGE_REPO }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
