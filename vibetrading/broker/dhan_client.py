@@ -32,9 +32,11 @@ def _dhan_circuit_name(self: DhanBrokerClient, *args, **kwargs) -> str:
 logger = logging.getLogger(__name__)
 
 try:
+    from dhanhq import DhanContext as _DhanContext
     from dhanhq import dhanhq as _DhanSDKClient
 except ImportError:  # the 'dhan' extra isn't installed; DhanBrokerClient stays unusable but importable
     _DhanSDKClient = None
+    _DhanContext = None
 
 
 class DhanBrokerClient(BrokerClient):
@@ -51,10 +53,13 @@ class DhanBrokerClient(BrokerClient):
 
     IMPORTANT: the method/parameter names below reflect the dhanhq SDK's
     documented surface as commonly published, but SDK APIs do shift between
-    releases. Before relying on this in production: `pip show dhanhq` to
-    confirm the installed version, `python -c "import dhanhq; help(dhanhq)"`
-    to check the exact method signatures, and run a paper/sandbox trade end
-    to end before flipping VIBETRADING_EXECUTION_MODE=live.
+    releases -- e.g. 2.0.2 replaced the `dhanhq(client_id, access_token)`
+    constructor with `dhanhq(DhanContext(client_id, access_token))`, hence
+    the `dhanhq>=2.0.2` floor in pyproject.toml. Before relying on this in
+    production: `pip show dhanhq` to confirm the installed version,
+    `python -c "import dhanhq; help(dhanhq)"` to check the exact method
+    signatures, and run a paper/sandbox trade end to end before flipping
+    VIBETRADING_EXECUTION_MODE=live.
     """
 
     def __init__(self, client_id: str, access_token: str):
@@ -64,7 +69,7 @@ class DhanBrokerClient(BrokerClient):
                 "DhanBrokerClient, or leave DHAN_CLIENT_ID/DHAN_ACCESS_TOKEN unset to fall back to "
                 "MockBrokerClient for paper trading."
             )
-        self._client = _DhanSDKClient(client_id, access_token)
+        self._client = _DhanSDKClient(_DhanContext(client_id, access_token))
         self._client_id = client_id
         self._security_id_cache: dict[str, str] = {}
 
