@@ -6,7 +6,7 @@ from typing import Any
 from vibetrading.config import Settings
 from vibetrading.core.enums import ExecutionMode
 
-SECTIONS: tuple[str, ...] = ("execution_broker", "llm", "risk_limits", "data_sources")
+SECTIONS: tuple[str, ...] = ("execution_broker", "llm")
 
 # Fields intentionally NOT in the registry (never DB-backed via this system):
 #   database_url, host, port, log_level, app_secrets_key, auth_secret_key,
@@ -17,6 +17,14 @@ SECTIONS: tuple[str, ...] = ("execution_broker", "llm", "risk_limits", "data_sou
 #     (see risk/tokens.py), not a tenant secret, so there's no reason to
 #     pay the multi-tenant-settings complexity tax on it. Env-only, same as
 #     app_secrets_key.
+#   risk_max_position_size_inr, risk_max_pct_capital_per_stock,
+#     risk_max_concurrent_positions, risk_max_daily_loss_inr,
+#     risk_mandatory_stop_loss_pct, risk_min_signal_confidence,
+#     risk_max_total_exposure_pct — deliberately env-only, not per-tenant
+#     UI-editable: keeps the Settings page to the two things that matter
+#     day-to-day (broker + LLM). RiskConfig.from_settings() still reads
+#     them straight off the Settings object, so overriding one is a normal
+#     .env edit, just not a per-account one.
 #   watchlist — superseded by the `stocks` table (see orchestrator/watchlist.py).
 #   vibetrading_kill_switch, vibetrading_kill_switch_mode — already have a
 #     live, authoritative home in RiskStateORM (edited via /risk/kill-switch);
@@ -101,40 +109,7 @@ _LLM_FIELDS = [
     _field("llm_model_backtest", "llm", str, label="Backtest agent model override"),
 ]
 
-# Every one of these must stay exactly the set of `risk_*` fields
-# risk/config.py's RiskConfig.from_settings() reads — see
-# tests/unit/test_settings_registry.py, which asserts this equality so the
-# runtime-restart exemption for this section (orchestrator/runtime.py) can
-# never silently go stale.
-_RISK_LIMITS_FIELDS = [
-    _field("risk_max_position_size_inr", "risk_limits", float, label="Max position size (INR)"),
-    _field("risk_max_pct_capital_per_stock", "risk_limits", float, label="Max % capital per stock"),
-    _field("risk_max_concurrent_positions", "risk_limits", int, label="Max concurrent positions"),
-    _field("risk_max_daily_loss_inr", "risk_limits", float, label="Max daily loss (INR)"),
-    _field("risk_mandatory_stop_loss_pct", "risk_limits", float, label="Mandatory stop-loss %"),
-    _field("risk_min_signal_confidence", "risk_limits", float, label="Min signal confidence"),
-    _field("risk_max_total_exposure_pct", "risk_limits", float, label="Max total exposure %"),
-]
-
-_DATA_SOURCE_FIELDS = [
-    _field("news_api_key", "data_sources", str, secret=True, label="NewsAPI key"),
-    _field("news_source_enabled", "data_sources", bool, label="Enable NewsAPI source"),
-    _field("chat_source_twitter_enabled", "data_sources", bool, label="Enable Twitter source"),
-    _field("twitter_bearer_token", "data_sources", str, secret=True, label="Twitter bearer token"),
-    _field("chat_source_reddit_enabled", "data_sources", bool, label="Enable Reddit source"),
-    _field("reddit_client_id", "data_sources", str, secret=True, label="Reddit client ID"),
-    _field("reddit_client_secret", "data_sources", str, secret=True, label="Reddit client secret"),
-    _field("chat_source_telegram_enabled", "data_sources", bool, label="Enable Telegram source"),
-    _field("telegram_api_id", "data_sources", str, secret=True, label="Telegram API ID"),
-    _field("telegram_api_hash", "data_sources", str, secret=True, label="Telegram API hash"),
-    _field("chat_source_stocktwits_enabled", "data_sources", bool, label="Enable StockTwits source"),
-    _field("chat_source_valuepickr_enabled", "data_sources", bool, label="Enable ValuePickr source"),
-]
-
-SETTINGS_REGISTRY: dict[str, SettingField] = {
-    f.key: f
-    for f in [*_EXECUTION_BROKER_FIELDS, *_LLM_FIELDS, *_RISK_LIMITS_FIELDS, *_DATA_SOURCE_FIELDS]
-}
+SETTINGS_REGISTRY: dict[str, SettingField] = {f.key: f for f in [*_EXECUTION_BROKER_FIELDS, *_LLM_FIELDS]}
 
 
 def fields_in_section(section: str) -> list[SettingField]:

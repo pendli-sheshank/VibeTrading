@@ -52,7 +52,7 @@ class OrchestratorScheduler:
         self.watchlist: list[Stock] = watchlist
 
         llm_router = LLMRouter(self.settings)
-        self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH), settings=self.settings)
+        self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH))
         self.technical_agent = TechnicalAgent(broker=broker)
         self.strategy_agent = StrategyAgent(llm=llm_router.get_adapter(AgentType.STRATEGY))
         # fencing_token: this process's proof of exclusive ownership of

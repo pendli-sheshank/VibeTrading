@@ -21,6 +21,16 @@ EXCLUDED_FIELDS = {
     "watchlist",
     "vibetrading_kill_switch",
     "vibetrading_kill_switch_mode",
+    # Env-only: not per-tenant Settings-UI-editable (see registry.py) --
+    # RiskConfig.from_settings() reads these straight off Settings, not
+    # through the registry.
+    "risk_max_position_size_inr",
+    "risk_max_pct_capital_per_stock",
+    "risk_max_concurrent_positions",
+    "risk_max_daily_loss_inr",
+    "risk_mandatory_stop_loss_pct",
+    "risk_min_signal_confidence",
+    "risk_max_total_exposure_pct",
 }
 
 
@@ -42,23 +52,18 @@ def test_fields_in_section_matches_registry_filter():
         assert actual == expected
 
 
-def test_risk_limits_section_matches_what_risk_config_reads():
-    """RiskConfig.from_settings() reads 8 Settings fields, but
-    vibetrading_kill_switch_mode is deliberately excluded from the registry
-    (its authoritative live home is RiskStateORM, not app_settings — see
-    registry.py's module docstring). The risk_limits section must be
-    exactly the 7 risk_* fields, so orchestrator/runtime.py's
-    restart-exemption for this section can never silently drift from what
-    the Risk Agent actually reads.
+def test_risk_limit_fields_are_not_registered_but_still_feed_risk_config():
+    """risk_* fields are deliberately env-only (see registry.py) -- not in
+    SETTINGS_REGISTRY at all, so not per-tenant Settings-UI-editable -- but
+    RiskConfig.from_settings() must keep reading every one of them straight
+    off the Settings object regardless.
     """
-    risk_limit_keys = {f.key for f in fields_in_section("risk_limits")}
-    expected = {k for k in Settings.model_fields if k.startswith("risk_") and k not in EXCLUDED_FIELDS}
-    assert risk_limit_keys == expected
+    risk_keys = {k for k in Settings.model_fields if k.startswith("risk_") and k != "risk_token_secret"}
+    assert risk_keys.isdisjoint(SETTINGS_REGISTRY.keys())
 
-    # And every one of those keys is a real RiskConfig.from_settings() input.
     dummy_settings = Settings(_env_file=None)
     config = RiskConfig.from_settings(dummy_settings)
-    for key in risk_limit_keys:
+    for key in risk_keys:
         risk_config_attr = key.removeprefix("risk_")
         assert hasattr(config, risk_config_attr), f"{key} has no matching RiskConfig field"
 
@@ -76,12 +81,6 @@ def test_secret_fields_are_marked():
         "openai_api_key",
         "gemini_api_key",
         "openrouter_api_key",
-        "news_api_key",
-        "twitter_bearer_token",
-        "reddit_client_id",
-        "reddit_client_secret",
-        "telegram_api_id",
-        "telegram_api_hash",
     }
     actual_secrets = {k for k, f in SETTINGS_REGISTRY.items() if f.secret}
     assert actual_secrets == expected_secrets

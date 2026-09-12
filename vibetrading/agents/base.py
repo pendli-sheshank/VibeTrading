@@ -8,8 +8,9 @@ from vibetrading.core.models import AgentOutput, Signal, Stock
 
 
 class Agent(ABC):
-    """Shared contract for data-collecting agents: Research's news/chat
-    collectors and the Strategy Agent's technical-indicator step.
+    """Shared contract for data-collecting agents: the Research Agent's
+    web-search-grounded news/sentiment call and the Strategy Agent's
+    technical-indicator step.
 
     Each call produces one AgentOutput for one stock at one point in time;
     the orchestrator persists it and the Strategy Agent later reads the

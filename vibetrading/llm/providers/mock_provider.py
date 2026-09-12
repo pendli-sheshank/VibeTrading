@@ -33,7 +33,10 @@ class MockLLMAdapter(LLMAdapter):
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 1024,
+        enable_web_search: bool = False,
     ) -> LLMResponse:
-        self.calls.append({"system": system, "messages": messages, "model": model})
+        self.calls.append(
+            {"system": system, "messages": messages, "model": model, "enable_web_search": enable_web_search}
+        )
         content = self._queue.pop(0) if self._queue else self.default_response
         return LLMResponse(content=content, model=model or "mock")

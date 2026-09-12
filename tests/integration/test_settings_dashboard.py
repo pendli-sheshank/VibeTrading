@@ -73,7 +73,7 @@ async def test_settings_page_renders_all_sections_and_masks_secrets(settings_cli
     response = await client.get("/settings")
     assert response.status_code == 200
     body = response.text
-    for heading in ["Execution &amp; Broker", "Watchlist", "LLM", "Risk Limits", "Data Sources"]:
+    for heading in ["Execution &amp; Broker", "Watchlist", "LLM"]:
         assert heading in body
 
     # A saved secret must render masked, never the actual stored value.
@@ -136,24 +136,11 @@ async def test_saving_execution_broker_section_persists_and_restarts(settings_cl
         assert row.value != "test-token"  # encrypted at rest
 
 
-async def test_saving_risk_limits_section_does_not_restart(settings_client):
-    client, _, runtime = settings_client
+async def test_saving_an_unknown_section_returns_404(settings_client):
+    client, _, _ = settings_client
 
-    response = await client.post(
-        "/settings/save/risk_limits",
-        data={
-            "risk_max_position_size_inr": "75000",
-            "risk_max_pct_capital_per_stock": "0.10",
-            "risk_max_concurrent_positions": "5",
-            "risk_max_daily_loss_inr": "10000",
-            "risk_mandatory_stop_loss_pct": "0.03",
-            "risk_min_signal_confidence": "0.65",
-            "risk_max_total_exposure_pct": "0.50",
-        },
-    )
-    assert response.status_code == 200
-    assert get_tenant_settings(FAKE_USER.id).risk_max_position_size_inr == 75000.0
-    assert runtime.restart_calls == 0  # the whole point of the exemption
+    response = await client.post("/settings/save/risk_limits", data={})
+    assert response.status_code == 404
 
 
 async def test_clearing_a_secret_via_checkbox_reverts_to_default(settings_client):

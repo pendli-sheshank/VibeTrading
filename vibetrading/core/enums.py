@@ -2,8 +2,6 @@ from enum import StrEnum
 
 
 class AgentType(StrEnum):
-    NEWS = "news"
-    CHAT = "chat"
     RESEARCH = "research"
     TECHNICAL = "technical"
     STRATEGY = "strategy"

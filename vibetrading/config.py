@@ -39,24 +39,6 @@ class Settings(BaseSettings):
     llm_model_strategy: str = ""
     llm_model_backtest: str = ""
 
-    # --- News / social sources -------------------------------------------------
-    news_api_key: str = ""
-    news_source_enabled: bool = False
-
-    chat_source_twitter_enabled: bool = False
-    twitter_bearer_token: str = ""
-
-    chat_source_reddit_enabled: bool = False
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-
-    chat_source_telegram_enabled: bool = False
-    telegram_api_id: str = ""
-    telegram_api_hash: str = ""
-
-    chat_source_stocktwits_enabled: bool = False
-    chat_source_valuepickr_enabled: bool = False
-
     # --- Database --------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./vibetrading.db"
     database_pool_size: int = 10
@@ -96,6 +78,11 @@ class Settings(BaseSettings):
     agent_interval_stop_loss_monitor_sec: int = 30
 
     # --- Risk Agent limits --------------------------------------------------
+    # Env-only, same convention as risk_token_secret below: not in
+    # settings/registry.py, so not editable per-tenant from the Settings UI
+    # (every tenant shares whatever this process's env/.env says). Override
+    # here before enabling live trading if the shipped defaults don't match
+    # your account.
     risk_max_position_size_inr: float = 50_000
     risk_max_pct_capital_per_stock: float = 0.10
     risk_max_concurrent_positions: int = 5

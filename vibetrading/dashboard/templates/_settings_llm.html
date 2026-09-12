@@ -2,8 +2,9 @@
 <section class="card" id="settings-llm">
   <h2>LLM</h2>
   <p class="settings-section-desc">
-    Provider and API key used by the Research and Strategy agents. No key configured runs every
-    agent against a safe mock.
+    Provider and API key used by every agent, including the Research Agent — which uses this
+    provider's own hosted web search to gather news and social sentiment, with no separate
+    data-source API keys to configure. No key configured runs every agent against a safe mock.
   </p>
   <form hx-post="/settings/save/llm" hx-target="#settings-llm" hx-swap="outerHTML">
     <div class="settings-grid">
