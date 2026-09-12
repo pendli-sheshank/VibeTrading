@@ -30,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dhan = [
-    "dhanhq>=2.0",
+    "dhanhq>=2.0.2",
 ]
 dev = [
     "pytest>=8.3",
