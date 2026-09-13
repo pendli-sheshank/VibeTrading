@@ -1,0 +1,149 @@
+{% import "_data_status.html" as fmt %}
+{% set q = snapshot.quote %}
+{% set ind = snapshot.indicators %}
+<div id="market-data">
+  <div class="page-head">
+    <div class="page-head-text">
+      <h2 class="card-title">Live market data</h2>
+      <p class="page-subtitle">
+        The inputs an analysis runs on. Source: <code>{{ snapshot.source }}</code> ·
+        as of {{ snapshot.generated_at.strftime("%Y-%m-%d %H:%M:%S") }} UTC
+      </p>
+    </div>
+    <div class="page-head-actions">
+      {{ fmt.status_pill(q.status, q.message or "") }}
+      <button
+        type="button"
+        class="btn btn-outline btn-sm"
+        hx-get="/stock/{{ symbol }}/market-data"
+        hx-target="#market-data"
+        hx-swap="outerHTML"
+        hx-indicator="#md-spinner"
+        hx-disabled-elt="this"
+      >
+        <span id="md-spinner" class="htmx-indicator spinner"></span>Refresh
+      </button>
+    </div>
+  </div>
+
+  {% if q.status.value in ("unavailable", "error") %}
+    <section class="card state-card state-{{ 'error' if q.status.value == 'error' else 'warn' }}">
+      <div class="card-header"><h2 class="card-title">Price data {{ q.status.value | upper }}</h2></div>
+      <p>{{ q.message or "No quote could be retrieved for this instrument." }}</p>
+    </section>
+  {% else %}
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Last price</div>
+        <div class="stat-value">{{ fmt.number(q.last_price) }}</div>
+        <div class="stat-sub">{{ fmt.signed(q.change) }} ({{ fmt.signed(q.change_pct, "%+.2f") }}%)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Volume</div>
+        <div class="stat-value">{{ fmt.integer(q.volume) }}</div>
+        <div class="stat-sub">{{ q.timestamp.strftime("%Y-%m-%d %H:%M") if q.timestamp else "no timestamp" }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Day range</div>
+        <div class="stat-value">{{ fmt.number(q.low) }} – {{ fmt.number(q.high) }}</div>
+        <div class="stat-sub">Open {{ fmt.number(q.open) }} · Prev close {{ fmt.number(q.previous_close) }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Market direction</div>
+        <div class="stat-value direction-{{ snapshot.direction.value }}">{{ snapshot.direction.value | upper }}</div>
+        <div class="stat-sub">from {{ snapshot.candle_count }} daily candle(s)</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Technical indicators</h2>
+      {{ fmt.status_pill(snapshot.indicator_status) }}
+    </div>
+    {% if snapshot.indicator_status.value == "data_insufficient" %}
+      <p class="empty-state">
+        <strong>DATA_INSUFFICIENT</strong> — not enough history to compute indicators.
+        {% if snapshot.indicator_message %}<br />{{ snapshot.indicator_message }}{% endif %}
+      </p>
+    {% else %}
+      <div class="pill-grid">
+        <div class="pill"><div class="pill-label">RSI (14)</div><div class="pill-value">{{ fmt.number(ind.rsi_14) }}</div></div>
+        <div class="pill"><div class="pill-label">MACD line</div><div class="pill-value">{{ fmt.number(ind.macd_line) }}</div></div>
+        <div class="pill"><div class="pill-label">MACD signal</div><div class="pill-value">{{ fmt.number(ind.macd_signal) }}</div></div>
+        <div class="pill"><div class="pill-label">MACD histogram</div><div class="pill-value">{{ fmt.signed(ind.macd_histogram) }}</div></div>
+        <div class="pill"><div class="pill-label">EMA 12</div><div class="pill-value">{{ fmt.number(ind.ema_12) }}</div></div>
+        <div class="pill"><div class="pill-label">EMA 26</div><div class="pill-value">{{ fmt.number(ind.ema_26) }}</div></div>
+        <div class="pill"><div class="pill-label">SMA 20</div><div class="pill-value">{{ fmt.number(ind.sma_20) }}</div></div>
+        <div class="pill"><div class="pill-label">SMA 50</div><div class="pill-value">{{ fmt.number(ind.sma_50) }}</div></div>
+        <div class="pill"><div class="pill-label">Bollinger upper</div><div class="pill-value">{{ fmt.number(ind.bollinger_upper) }}</div></div>
+        <div class="pill"><div class="pill-label">Bollinger middle</div><div class="pill-value">{{ fmt.number(ind.bollinger_middle) }}</div></div>
+        <div class="pill"><div class="pill-label">Bollinger lower</div><div class="pill-value">{{ fmt.number(ind.bollinger_lower) }}</div></div>
+        <div class="pill"><div class="pill-label">ATR (14)</div><div class="pill-value">{{ fmt.number(ind.atr_14) }}</div></div>
+        <div class="pill"><div class="pill-label">Support</div><div class="pill-value">{{ fmt.number(ind.support) }}</div></div>
+        <div class="pill"><div class="pill-label">Resistance</div><div class="pill-value">{{ fmt.number(ind.resistance) }}</div></div>
+        <div class="pill"><div class="pill-label">Volume trend</div><div class="pill-value">{{ fmt.number(ind.volume_trend) }}x</div></div>
+      </div>
+    {% endif %}
+  </section>
+
+  {% set oc = snapshot.option_chain %}
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Option chain</h2>
+      {{ fmt.status_pill(oc.status if oc else "unavailable") }}
+    </div>
+    {% if not oc or oc.status.value in ("unavailable", "error", "data_insufficient") %}
+      <p class="empty-state">
+        {{ oc.message if oc and oc.message else "No option-chain data is available for this instrument." }}
+      </p>
+    {% else %}
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Put-Call Ratio (OI)</div>
+          <div class="stat-value">{{ fmt.number(oc.put_call_ratio, "%.3f") }}</div>
+          <div class="stat-sub">Expiry {{ oc.expiry or "—" }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">ATM strike</div>
+          <div class="stat-value">{{ fmt.number(oc.atm_strike) }}</div>
+          <div class="stat-sub">Underlying {{ fmt.number(oc.underlying_price) }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total call OI</div>
+          <div class="stat-value">{{ fmt.integer(oc.total_call_oi) }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total put OI</div>
+          <div class="stat-value">{{ fmt.integer(oc.total_put_oi) }}</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Call OI</th><th>Chg OI</th><th>Call vol</th><th>Call IV</th>
+              <th>Strike</th>
+              <th>Put IV</th><th>Put vol</th><th>Chg OI</th><th>Put OI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for strike in oc.strikes %}
+            <tr class="{{ 'atm-row' if oc.atm_strike and strike.strike == oc.atm_strike else '' }}">
+              <td>{{ fmt.integer(strike.call_oi) }}</td>
+              <td>{{ fmt.signed(strike.call_oi_change, "%+d") }}</td>
+              <td>{{ fmt.integer(strike.call_volume) }}</td>
+              <td>{{ fmt.number(strike.call_iv) }}</td>
+              <td><strong>{{ fmt.number(strike.strike) }}</strong></td>
+              <td>{{ fmt.number(strike.put_iv) }}</td>
+              <td>{{ fmt.integer(strike.put_volume) }}</td>
+              <td>{{ fmt.signed(strike.put_oi_change, "%+d") }}</td>
+              <td>{{ fmt.integer(strike.put_oi) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+</div>

@@ -6,14 +6,16 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from vibetrading.broker.base import BrokerClient
-from vibetrading.core.enums import ExecutionMode, OrderSide, OrderStatus
-from vibetrading.core.exceptions import OrderRejectedError
+from vibetrading.core.enums import DataStatus, ExecutionMode, OrderSide, OrderStatus
+from vibetrading.core.exceptions import MarketDataUnavailableError, OrderRejectedError
 from vibetrading.core.models import (
     Candle,
     FundsSnapshot,
+    OptionChainSnapshot,
     OrderRequest,
     OrderResult,
     Position,
+    Quote,
     Stock,
 )
 from vibetrading.risk.tokens import RiskApprovalToken
@@ -76,6 +78,48 @@ class MockBrokerClient(BrokerClient):
         now = datetime.now(UTC)
         candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=2), now)
         return candles[-1].close if candles else 0.0
+
+    async def get_quote(self, stock: Stock) -> Quote:
+        """A quote built from the same synthetic series as the candles.
+
+        Status is always SIMULATED, never LIVE: every consumer (and every
+        screen) can tell this apart from a real market price.
+        """
+        now = datetime.now(UTC)
+        candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=5), now)
+        if not candles:
+            raise MarketDataUnavailableError(f"No simulated series available for {stock.symbol}.")
+
+        latest = candles[-1]
+        previous_close = candles[-2].close if len(candles) > 1 else None
+        return Quote(
+            symbol=stock.symbol,
+            status=DataStatus.SIMULATED,
+            last_price=latest.close,
+            previous_close=previous_close,
+            open=latest.open,
+            high=latest.high,
+            low=latest.low,
+            close=latest.close,
+            volume=latest.volume,
+            timestamp=latest.timestamp,
+            source="mock:simulated",
+            message="Simulated paper-trading data — not a real market price.",
+        )
+
+    async def get_option_chain(self, stock: Stock, strikes_around_atm: int = 5) -> OptionChainSnapshot:
+        """Deliberately unsupported.
+
+        A believable-looking fake option chain (OI, IV, PCR) is exactly the
+        kind of fabricated market data that could drive a real trade, so the
+        mock refuses rather than generating one. Configure Dhan credentials
+        for a real chain; until then the UI shows UNAVAILABLE.
+        """
+        raise MarketDataUnavailableError(
+            f"Option-chain data for {stock.symbol} needs a live broker connection. "
+            "MockBrokerClient does not simulate option chains, because fabricated open "
+            "interest and implied volatility must never be shown as if they were real."
+        )
 
     async def place_order(self, order_request: OrderRequest, risk_token: RiskApprovalToken) -> OrderResult:
         self._require_valid_token(risk_token)

@@ -5,6 +5,13 @@ import pandas as pd
 
 from vibetrading.core.models import Candle
 
+# The longest window any indicator below needs (SMA-50). With fewer candles
+# than this, compute_all_indicators() returns None for the long-window
+# indicators and the rest are still inside their warm-up, so anything
+# derived from them is noise wearing a number's clothes. Callers treat this
+# as the minimum for a real analysis.
+MIN_CANDLES_FOR_ANALYSIS = 50
+
 
 def candles_to_dataframe(candles: list[Candle]) -> pd.DataFrame:
     df = pd.DataFrame(
@@ -77,6 +84,25 @@ def volume_trend(volume: pd.Series, short_window: int = 5, long_window: int = 20
     return (short_avg / long_avg.replace(0, pd.NA)).fillna(1.0)
 
 
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Wilder's Average True Range — absolute volatility in price units.
+
+    True range is the widest of (high-low), (high-prev_close),
+    (prev_close-low), so it accounts for overnight gaps that a plain
+    high-low range misses.
+    """
+    prev_close = df["close"].shift(1)
+    true_range = pd.concat(
+        [
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return true_range.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+
+
 def support_resistance(df: pd.DataFrame, window: int = 20) -> tuple[pd.Series, pd.Series]:
     """Rolling window support (recent low) and resistance (recent high)."""
     support = df["low"].rolling(window=window, min_periods=window).min()
@@ -100,6 +126,7 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
     bb_upper, bb_middle, bb_lower = bollinger_bands(close)
     vol_trend = volume_trend(df["volume"])
     support, resistance = support_resistance(df)
+    atr_14 = atr(df)
 
     def last(series: pd.Series) -> float | None:
         if series.empty or pd.isna(series.iloc[-1]):
@@ -124,4 +151,5 @@ def compute_all_indicators(df: pd.DataFrame) -> dict:
         "volume_trend": last(vol_trend),
         "support": last(support),
         "resistance": last(resistance),
+        "atr_14": last(atr_14),
     }

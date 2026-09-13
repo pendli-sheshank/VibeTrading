@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
 from vibetrading.agents.strategy.technical_agent import interpret_indicators
@@ -11,6 +11,7 @@ from vibetrading.agents.strategy.technical_indicators import (
 )
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import ActionType, AgentType
+from vibetrading.core.exceptions import MarketDataUnavailableError
 from vibetrading.core.models import AgentOutput, BacktestResult, Candle, Stock, TradeLogEntry
 
 MIN_WARMUP_CANDLES = 20
@@ -50,7 +51,15 @@ class BacktestEngine:
         all_candles = await self.broker.get_historical_candles(
             stock, "1d", start_date - timedelta(days=warmup_days), end_date
         )
-        all_candles = sorted(all_candles, key=lambda c: c.timestamp)
+        all_candles = sorted(_normalize_timestamps(all_candles), key=lambda c: c.timestamp)
+        start_date, end_date = _as_utc(start_date), _as_utc(end_date)
+
+        if len(all_candles) < MIN_WARMUP_CANDLES:
+            raise MarketDataUnavailableError(
+                f"Backtesting {stock.symbol} needs at least {MIN_WARMUP_CANDLES} candles of history; "
+                f"the broker returned {len(all_candles)} for "
+                f"{start_date:%Y-%m-%d}..{end_date:%Y-%m-%d} (including {warmup_days} warm-up days)."
+            )
 
         trades: list[TradeLogEntry] = []
         open_trade: _OpenTrade | None = None
@@ -166,3 +175,23 @@ class BacktestEngine:
             )
         )
         return pnl
+
+
+def _as_utc(moment: datetime) -> datetime:
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def _normalize_timestamps(candles: list[Candle]) -> list[Candle]:
+    """Put every candle on a timezone-aware footing before any comparison.
+
+    A broker that returns naive timestamps (nothing in the BrokerClient
+    contract forbids it) used to make `start_date <= c.timestamp` raise
+    "can't compare offset-naive and offset-aware datetimes" — an unhandled
+    TypeError surfacing as a 500 from the Backtest tab.
+    """
+    return [
+        candle if candle.timestamp.tzinfo is not None else candle.model_copy(
+            update={"timestamp": candle.timestamp.replace(tzinfo=UTC)}
+        )
+        for candle in candles
+    ]

@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from vibetrading.agents.strategy.technical_indicators import (
+    atr,
     bollinger_bands,
     candles_to_dataframe,
     compute_all_indicators,
@@ -125,6 +126,32 @@ def test_support_resistance_rolling_window():
     support, resistance = support_resistance(highs_lows, window=20)
     assert resistance.iloc[19] == highs_lows["high"].iloc[0:20].max()
     assert support.iloc[19] == highs_lows["low"].iloc[0:20].min()
+
+
+def test_atr_accounts_for_gaps_a_plain_high_low_range_would_miss():
+    """A gap-up open makes the true range wider than that bar's own
+    high-low, which is the whole reason ATR uses true range."""
+    df = pd.DataFrame(
+        {
+            "high": [10.0, 11.0, 30.0],
+            "low": [9.0, 10.0, 29.0],
+            "close": [9.5, 10.5, 29.5],
+        }
+    )
+
+    true_ranges = atr(df, period=1)
+
+    # Bar 3 gapped from a 10.5 close to a 29-30 range: true range is
+    # 30 - 10.5 = 19.5, far wider than its own 1.0 high-low spread.
+    assert true_ranges.iloc[2] == pytest.approx(19.5)
+
+
+def test_atr_is_included_in_the_full_indicator_set():
+    closes = [100 + (i % 5) + i * 0.2 for i in range(60)]
+    result = compute_all_indicators(candles_to_dataframe(make_candles(closes)))
+
+    assert result["atr_14"] is not None
+    assert result["atr_14"] > 0
 
 
 def test_compute_all_indicators_returns_none_when_insufficient_history():

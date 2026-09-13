@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field, field_validator
 from vibetrading.core.enums import (
     ActionType,
     AgentType,
+    DataStatus,
     ExecutionMode,
+    MarketDirection,
     OrderSide,
     OrderStatus,
     SignalSource,
@@ -34,6 +36,106 @@ class Candle(BaseModel):
     low: float
     close: float
     volume: int
+
+
+class Quote(BaseModel):
+    """A point-in-time price read for one instrument.
+
+    Every field is optional except the symbol and status: a provider that
+    only returns a last price must leave the rest None rather than have
+    anything downstream invent an open/high/low from it.
+    """
+
+    symbol: str
+    status: DataStatus
+    last_price: float | None = None
+    previous_close: float | None = None
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    close: float | None = None
+    volume: int | None = None
+    timestamp: datetime | None = None
+    source: str = "unknown"
+    message: str | None = None
+
+    @property
+    def change(self) -> float | None:
+        if self.last_price is None or self.previous_close is None:
+            return None
+        return round(self.last_price - self.previous_close, 2)
+
+    @property
+    def change_pct(self) -> float | None:
+        if self.last_price is None or not self.previous_close:
+            return None
+        return round((self.last_price - self.previous_close) / self.previous_close * 100, 2)
+
+
+class OptionStrike(BaseModel):
+    strike: float
+    call_oi: int | None = None
+    call_oi_change: int | None = None
+    call_volume: int | None = None
+    call_iv: float | None = None
+    call_ltp: float | None = None
+    put_oi: int | None = None
+    put_oi_change: int | None = None
+    put_volume: int | None = None
+    put_iv: float | None = None
+    put_ltp: float | None = None
+
+
+class OptionChainSnapshot(BaseModel):
+    """Option-chain metrics around the money for one underlying.
+
+    Only populated by brokers that actually expose an option chain. When a
+    provider can't, the snapshot carries status UNAVAILABLE and empty
+    strikes — the UI says so rather than showing a fabricated chain.
+    """
+
+    symbol: str
+    status: DataStatus
+    expiry: str | None = None
+    underlying_price: float | None = None
+    atm_strike: float | None = None
+    strikes: list[OptionStrike] = Field(default_factory=list)
+    total_call_oi: int | None = None
+    total_put_oi: int | None = None
+    put_call_ratio: float | None = None
+    timestamp: datetime | None = None
+    source: str = "unknown"
+    message: str | None = None
+
+
+class MarketSnapshot(BaseModel):
+    """Everything known about an instrument right before an analysis runs.
+
+    This is what the dashboard renders *before* the Analyze button does
+    anything, so the inputs to an analysis are visible and auditable. It is
+    also the gate: `is_sufficient_for_analysis` false means no analysis is
+    attempted at all, rather than one produced from absent data.
+    """
+
+    symbol: str
+    quote: Quote
+    indicators: dict = Field(default_factory=dict)
+    indicator_status: DataStatus = DataStatus.DATA_INSUFFICIENT
+    # Why indicators couldn't be computed, when they couldn't. This is the
+    # headline reason an analysis was blocked -- distinct from the other
+    # messages, which may be about incidental sections (a missing option
+    # chain never stopped anything).
+    indicator_message: str | None = None
+    candle_count: int = 0
+    direction: MarketDirection = MarketDirection.UNKNOWN
+    option_chain: OptionChainSnapshot | None = None
+    generated_at: datetime
+    source: str = "unknown"
+    messages: list[str] = Field(default_factory=list)
+
+    @property
+    def is_sufficient_for_analysis(self) -> bool:
+        return self.indicator_status in (DataStatus.LIVE, DataStatus.DELAYED, DataStatus.SIMULATED)
 
 
 class AgentOutput(BaseModel):

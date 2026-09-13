@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from importlib.util import find_spec
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from tests.conftest import make_test_engine, reset_schema, seed_test_users
+from vibetrading.broker.dhan_client import DhanBrokerClient
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.config import Settings
 from vibetrading.orchestrator.runtime import OrchestratorRuntime
@@ -121,8 +123,16 @@ async def test_saving_dhan_credentials_via_save_settings_and_restarting_swaps_th
         )
         await db_session.commit()
 
-        with pytest.raises(BrokerError, match="dhanhq"):
+        # Whether the rebuild raises or succeeds depends on the optional
+        # 'dhan' extra being installed; either way the point stands -- the
+        # restart took the Dhan branch instead of silently keeping the
+        # MockBrokerClient it started with.
+        if find_spec("dhanhq") is None:
+            with pytest.raises(BrokerError, match="dhanhq"):
+                await runtime.restart()
+        else:
             await runtime.restart()
+            assert isinstance(runtime.broker, DhanBrokerClient)
     finally:
         await runtime.shutdown()
 

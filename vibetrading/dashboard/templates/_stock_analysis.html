@@ -1,30 +1,93 @@
-<div class="grid-2" id="stock-analysis">
-  <section class="card">
-    <div class="card-header">
-      <h2 class="card-title">Technical Agent</h2>
-      {% if technical %}<span class="badge badge-ok">{{ "%.0f%%" | format(technical.confidence * 100) }} confidence</span>{% endif %}
+{% import "_data_status.html" as fmt %}
+<div id="stock-analysis">
+  {% if result is not none and not result.analyzed %}
+    {# Nothing was computed. Say exactly why instead of rendering a 0% card
+       that looks like a real, low-conviction analysis. #}
+    {% set insufficient = result.status.value == "data_insufficient" %}
+    <section class="card state-card state-{{ 'warn' if insufficient else 'error' }}">
+      <div class="card-header">
+        <h2 class="card-title">
+          {{ "DATA_INSUFFICIENT — no analysis run" if insufficient else "Analysis could not run" }}
+        </h2>
+        {{ fmt.status_pill(result.status) }}
+      </div>
+      <p>
+        {% if insufficient %}
+          {{ symbol }} does not have enough market data to analyze right now, so no confidence
+          score was produced. A number here would not mean anything.
+        {% else %}
+          The analysis failed before producing a result for {{ symbol }}.
+        {% endif %}
+      </p>
+      {% if result.messages %}
+      <ul class="reason-list">
+        {% for message in result.messages %}<li>{{ message }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      <p class="muted">
+        Fix the cause above and click <strong>Analyze now</strong> again. Nothing was saved.
+      </p>
+    </section>
+  {% else %}
+    {% if result is not none %}
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Overall confidence</div>
+        <div class="stat-value">
+          {% if result.confidence is not none %}{{ "%.0f%%" | format(result.confidence * 100) }}{% else %}<span class="muted">—</span>{% endif %}
+        </div>
+        <div class="stat-sub">weighted across reporting agents</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Market direction</div>
+        <div class="stat-value direction-{{ result.direction.value }}">{{ result.direction.value | upper }}</div>
+        <div class="stat-sub">from computed indicators</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Data status</div>
+        <div class="stat-value">{{ fmt.status_pill(result.status) }}</div>
+        <div class="stat-sub">{{ result.snapshot.candle_count }} candle(s) · {{ result.snapshot.source }}</div>
+      </div>
     </div>
-    {% if technical %}
-      <p>{{ technical.summary }}</p>
-      <table class="kv-table">
-        {% for key, value in technical.raw_data.items() %}
-        <tr><td>{{ key }}</td><td>{{ "%.2f" | format(value) if value is number else value }}</td></tr>
-        {% endfor %}
-      </table>
-    {% else %}
-      <p class="empty-state">No technical read yet — click "Analyze now" above.</p>
+    {% if result.messages %}
+    <section class="card state-card state-warn">
+      <div class="card-header"><h2 class="card-title">Partial result</h2></div>
+      <ul class="reason-list">
+        {% for message in result.messages %}<li>{{ message }}</li>{% endfor %}
+      </ul>
+    </section>
     {% endif %}
-  </section>
+    {% endif %}
 
-  <section class="card">
-    <div class="card-header">
-      <h2 class="card-title">Research Agent</h2>
-      {% if research %}<span class="badge badge-ok">{{ "%.0f%%" | format(research.confidence * 100) }} confidence</span>{% endif %}
+    <div class="grid-2">
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Technical Agent</h2>
+          {% if technical %}<span class="badge badge-ok">{{ "%.0f%%" | format(technical.confidence * 100) }} confidence</span>{% endif %}
+        </div>
+        {% if technical %}
+          <p>{{ technical.summary }}</p>
+          <table class="kv-table">
+            {% for key, value in technical.raw_data.items() %}
+            <tr><td>{{ key }}</td><td>{{ "%.2f" | format(value) if value is number else value }}</td></tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <p class="empty-state">No technical read yet — click "Analyze now" above.</p>
+        {% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Research Agent</h2>
+          {% if research %}<span class="badge badge-ok">{{ "%.0f%%" | format(research.confidence * 100) }} confidence</span>{% endif %}
+        </div>
+        {% if research %}
+          <p>{{ research.summary }}</p>
+        {% else %}
+          <p class="empty-state">No research read yet — click "Analyze now" above.</p>
+        {% endif %}
+      </section>
     </div>
-    {% if research %}
-      <p>{{ research.summary }}</p>
-    {% else %}
-      <p class="empty-state">No research read yet — click "Analyze now" above.</p>
-    {% endif %}
-  </section>
+  {% endif %}
 </div>

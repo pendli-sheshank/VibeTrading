@@ -4,7 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VibeTrading{% block title %}{% endblock %}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  {# Inline so the browser's automatic /favicon.ico request never happens --
+     it was the one recurring 404 in an otherwise clean console. #}
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📈</text></svg>" />
+  {# Served locally, not from a CDN. Every interactive control on this
+     dashboard -- Analyze, Run backtest, Save settings, the kill switch --
+     is an htmx attribute, so if this one script fails to load they all
+     silently do nothing with no error anywhere. That is not an acceptable
+     failure mode for a trading app behind a corporate proxy, an ad
+     blocker, a firewall, or a CDN outage. #}
+  <script src="/static/js/htmx-1.9.12.min.js"></script>
   <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>
