@@ -1,0 +1,30 @@
+<div class="grid-2" id="stock-analysis">
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Technical Agent</h2>
+      {% if technical %}<span class="badge badge-ok">{{ "%.0f%%" | format(technical.confidence * 100) }} confidence</span>{% endif %}
+    </div>
+    {% if technical %}
+      <p>{{ technical.summary }}</p>
+      <table class="kv-table">
+        {% for key, value in technical.raw_data.items() %}
+        <tr><td>{{ key }}</td><td>{{ "%.2f" | format(value) if value is number else value }}</td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="empty-state">No technical read yet — click "Analyze now" above.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Research Agent</h2>
+      {% if research %}<span class="badge badge-ok">{{ "%.0f%%" | format(research.confidence * 100) }} confidence</span>{% endif %}
+    </div>
+    {% if research %}
+      <p>{{ research.summary }}</p>
+    {% else %}
+      <p class="empty-state">No research read yet — click "Analyze now" above.</p>
+    {% endif %}
+  </section>
+</div>

@@ -1,29 +1,41 @@
-<section class="card" id="risk-panel">
-  <h2>Kill switch</h2>
-  <p>
-    Status:
-    {% if state.kill_switch_active %}
-      <span class="badge badge-danger">ACTIVE ({{ state.kill_switch_mode }})</span>
-    {% else %}
-      <span class="badge badge-ok">inactive</span>
-    {% endif %}
-  </p>
-  <form hx-post="/risk/kill-switch" hx-target="#risk-panel" hx-swap="outerHTML">
-    {% if state.kill_switch_active %}
-      <input type="hidden" name="active" value="false" />
-      <button type="submit" class="btn btn-ok">Deactivate kill switch</button>
-    {% else %}
-      <input type="hidden" name="active" value="true" />
-      <button type="submit" class="btn btn-danger">Activate kill switch</button>
-    {% endif %}
-  </form>
+<div id="risk-panel">
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Kill switch</div>
+      <div class="stat-value">
+        {% if state.kill_switch_active %}
+          <span class="badge badge-danger">ACTIVE ({{ state.kill_switch_mode }})</span>
+        {% else %}
+          <span class="badge badge-ok">inactive</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Realized P&amp;L today</div>
+      <div class="stat-value {{ 'positive' if state.daily_realized_pnl > 0 else ('negative' if state.daily_realized_pnl < 0 else '') }}">{{ "%+.2f" | format(state.daily_realized_pnl) }}</div>
+      <div class="stat-sub">{{ state.daily_pnl_date }} (UTC)</div>
+    </div>
+  </div>
 
-  <h2>Daily state</h2>
-  <table class="kv-table">
-    <tr><td>Realized P&amp;L today</td><td>{{ "%+.2f" | format(state.daily_realized_pnl) }}</td></tr>
-    <tr><td>Date (UTC)</td><td>{{ state.daily_pnl_date }}</td></tr>
-  </table>
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Kill switch control</h2>
+    </div>
+    <form hx-post="/risk/kill-switch" hx-target="#risk-panel" hx-swap="outerHTML">
+      {% if state.kill_switch_active %}
+        <input type="hidden" name="active" value="false" />
+        <button type="submit" class="btn btn-ok">Deactivate kill switch</button>
+      {% else %}
+        <input type="hidden" name="active" value="true" />
+        <button type="submit" class="btn btn-danger">Activate kill switch</button>
+      {% endif %}
+    </form>
+  </section>
 
-  <h2>Configured limits</h2>
-  {% include "_risk_limits_table.html" %}
-</section>
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Configured limits</h2>
+    </div>
+    {% include "_risk_limits_table.html" %}
+  </section>
+</div>
