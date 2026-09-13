@@ -4,13 +4,15 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime
 
-from vibetrading.core.exceptions import InvalidRiskTokenError
+from vibetrading.core.exceptions import InvalidRiskTokenError, MarketDataUnavailableError
 from vibetrading.core.models import (
     Candle,
     FundsSnapshot,
+    OptionChainSnapshot,
     OrderRequest,
     OrderResult,
     Position,
+    Quote,
     Stock,
 )
 from vibetrading.risk.tokens import RiskApprovalToken, verify_and_consume_token
@@ -66,6 +68,27 @@ class BrokerClient(ABC):
     @abstractmethod
     async def get_ltp(self, stock: Stock) -> float:
         """Last traded price."""
+
+    async def get_quote(self, stock: Stock) -> Quote:
+        """Current price/OHLC/volume for one instrument.
+
+        Not abstract: a broker integration that can't serve quotes says so
+        here, and the market-data layer renders UNAVAILABLE for it. It must
+        never synthesize one from whatever else it has -- a made-up price
+        would feed straight into a real trading decision.
+        """
+        raise MarketDataUnavailableError(
+            f"{type(self).__name__} does not support quote lookups for {stock.symbol}."
+        )
+
+    async def get_option_chain(self, stock: Stock, strikes_around_atm: int = 5) -> OptionChainSnapshot:
+        """Option-chain metrics (OI, IV, volume) around the money.
+
+        Same contract as get_quote: unsupported means raise, never invent.
+        """
+        raise MarketDataUnavailableError(
+            f"{type(self).__name__} does not support option chains for {stock.symbol}."
+        )
 
     @abstractmethod
     async def subscribe_market_feed(

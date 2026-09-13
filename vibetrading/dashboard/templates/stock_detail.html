@@ -23,6 +23,19 @@
   </div>
 </div>
 
+{# Market data loads on page open (hx-trigger="load") so the inputs to an
+   analysis are on screen before anyone clicks Analyze. #}
+<div
+  id="market-data"
+  hx-get="/stock/{{ symbol }}/market-data"
+  hx-trigger="load"
+  hx-swap="outerHTML"
+>
+  <section class="card">
+    <p class="empty-state"><span class="spinner"></span> Loading live market data for {{ symbol }}…</p>
+  </section>
+</div>
+
 {% include "_stock_analysis.html" %}
 
 <section class="card">

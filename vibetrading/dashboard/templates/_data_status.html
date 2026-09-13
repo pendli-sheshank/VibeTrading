@@ -1,0 +1,22 @@
+{# One status pill. Every market-data number on screen sits next to one of
+   these, so a live price is never mistaken for a simulated or stale one. #}
+{% macro status_pill(status, extra="") %}
+  {% set label = status.value if status.value is defined else status %}
+  <span class="status-pill status-{{ label }}" title="{{ extra }}">{{ label | replace("_", " ") | upper }}</span>
+{% endmacro %}
+
+{% macro number(value, fmt="%.2f", fallback="—") %}
+  {%- if value is none -%}<span class="muted">{{ fallback }}</span>{%- else -%}{{ fmt | format(value) }}{%- endif -%}
+{% endmacro %}
+
+{% macro integer(value, fallback="—") %}
+  {%- if value is none -%}<span class="muted">{{ fallback }}</span>{%- else -%}{{ "{:,}".format(value) }}{%- endif -%}
+{% endmacro %}
+
+{% macro signed(value, fmt="%+.2f", fallback="—") %}
+  {%- if value is none -%}
+    <span class="muted">{{ fallback }}</span>
+  {%- else -%}
+    <span class="{{ 'positive' if value > 0 else ('negative' if value < 0 else '') }}">{{ fmt | format(value) }}</span>
+  {%- endif -%}
+{% endmacro %}

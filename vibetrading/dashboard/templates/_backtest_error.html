@@ -1,0 +1,11 @@
+{# Rendered in place of a result when a backtest can't run. Previously these
+   cases reached the browser as a 500 whose HTML body htmx discarded, so the
+   UI just went quiet with nothing to explain it. #}
+<section class="card state-card state-{{ 'warn' if status_label == 'DATA_INSUFFICIENT' else 'error' }}">
+  <div class="card-header">
+    <h2 class="card-title">Backtest for {{ symbol }} could not run</h2>
+    <span class="status-pill status-{{ status_label | lower }}">{{ status_label }}</span>
+  </div>
+  <p>{{ message }}</p>
+  <p class="muted">Nothing was saved. Adjust the parameters or the stock's configuration and run it again.</p>
+</section>

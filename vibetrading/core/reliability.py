@@ -163,6 +163,7 @@ def with_retry_and_circuit_breaker(
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
     cooldown_seconds: float = DEFAULT_COOLDOWN_SECONDS,
+    not_a_failure: tuple[type[Exception], ...] = (),
 ):
     """Decorator for an async method: retries up to max_attempts times
     (exponential backoff with jitter) on any exception type in retry_on,
@@ -180,6 +181,13 @@ def with_retry_and_circuit_breaker(
     derives one from the call's own arguments (e.g. a per-tenant/per-
     account key) -- evaluated fresh on every call, so it can depend on
     instance state (pass self.some_attribute-derived logic via a lambda).
+
+    `not_a_failure` lists exception types that propagate to the caller
+    without counting against the breaker. These are the *permanent* answers
+    to one specific request -- "this instrument has no security ID mapped",
+    "this provider has no option chain" -- which say nothing about the
+    integration's health. Counting them would let one misconfigured stock
+    trip the breaker for every other call on the same account.
     """
 
     def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
@@ -198,6 +206,8 @@ def with_retry_and_circuit_breaker(
                 ):
                     with attempt:
                         result = await func(*args, **kwargs)
+            except not_a_failure:
+                raise
             except Exception:
                 breaker.on_failure()
                 raise

@@ -107,8 +107,18 @@ async def test_risk_state_endpoint_returns_config_and_defaults(api_client):
     assert "config" in body
 
 
+async def _seed_stock(session_factory, symbol: str, **kwargs) -> None:
+    async with session_factory() as session:
+        await upsert_stock(session, FAKE_USER.id, Stock(symbol=symbol, **kwargs))
+        await session.commit()
+
+
 async def test_backtest_run_endpoint_persists_and_returns_result(api_client):
-    client, _, _ = api_client
+    client, session_factory, _ = api_client
+    # Backtesting resolves the stock from the watchlist so it can pass the
+    # broker security ID through -- an unknown symbol is a 404, not a run.
+    await _seed_stock(session_factory, "RELIANCE")
+
     response = await client.post(
         "/api/backtest/run", json={"symbol": "RELIANCE", "days": 60, "warmup_days": 90}
     )
@@ -127,7 +137,9 @@ async def test_dashboard_backtest_page_loads(api_client):
 
 
 async def test_dashboard_backtest_run_form_returns_result_html(api_client):
-    client, _, _ = api_client
+    client, session_factory, _ = api_client
+    await _seed_stock(session_factory, "TCS")
+
     response = await client.post("/backtest/run", data={"symbol": "TCS", "days": "60"})
     assert response.status_code == 200
     assert "TCS" in response.text

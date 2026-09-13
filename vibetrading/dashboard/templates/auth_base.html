@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VibeTrading{% block title %}{% endblock %}</title>
+  {# Same inline icon as base.html, so the login/register pages don't 404 on
+     the browser's automatic /favicon.ico request either. #}
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📈</text></svg>" />
   <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>

@@ -40,6 +40,8 @@ exists to preserve across a horizontally-scaled worker fleet: see
 |---|---|---|
 | Auth & tenancy | `vibetrading/auth/` | `fastapi-users`, cookie sessions; `tenant_id == user.id` everywhere, no separate tenant table |
 | Research Agent | `vibetrading/agents/research/` | One LLM call with hosted web search finds and synthesizes news + social sentiment — no dedicated data-source APIs |
+| Market data | `vibetrading/marketdata/` | Assembles the pre-analysis snapshot (quote, OHLC, indicators, option chain) with a per-section `DataStatus` — never fabricates a missing value |
+| On-demand analysis | `vibetrading/agents/on_demand.py` | Runs Research + Technical now for one stock, gated on data sufficiency (shared by the dashboard button and the JSON API) |
 | Strategy Agent | `vibetrading/agents/strategy/` | Technical indicators + LLM synthesis into a `Signal` |
 | Backtest Agent | `vibetrading/agents/backtest/` | Replays `StrategyAgent.synthesize()` unmodified over historical candles |
 | Risk Agent | `vibetrading/risk/` | Rule pipeline, kill switch, daily-loss circuit breaker, approval tokens, fencing-token lease check |
@@ -542,6 +544,23 @@ realtime fan-out, reliability/observability hardening, and CI/CD/deployment
   news/sentiment exists to replay, so `BacktestEngine` synthesizes signals
   from technical output alone. Live confidence (which also weighs
   Research) will differ from backtested confidence for the same setup.
+- **Live trading needs a Dhan security ID per stock.** Dhan addresses
+  instruments by numeric security ID, not ticker, so with Dhan credentials
+  configured a stock without one can't be quoted, analyzed or backtested.
+  This is now stated on screen (`DATA_INSUFFICIENT`, naming the stock and
+  where to fix it) rather than appearing as an empty or zero-confidence
+  result. Set them under Settings → Watchlist from Dhan's instrument master.
+- **Option-chain data requires a live broker.** `MockBrokerClient`
+  deliberately refuses to simulate open interest, implied volatility or a
+  put-call ratio — fabricated derivatives data could drive a real trade —
+  so in paper mode that panel reads `UNAVAILABLE`. Everything else in the
+  market-data panel is labelled `SIMULATED` there, never `LIVE`.
+- **Analysis is gated on data sufficiency.** Fewer than
+  `MIN_CANDLES_FOR_ANALYSIS` (50) daily candles means no analysis runs at
+  all and no confidence score is produced, because the long-window
+  indicators (SMA-50) cannot be computed and the rest are still warming up.
+  A missing reading and a genuine zero-conviction reading are shown
+  differently and must not be confused.
 - **The Research Agent's web search quality depends on the configured LLM
   provider/model**, not on VibeTrading. `web_search_options` is passed
   through LiteLLM uniformly (see `LiteLLMAdapter.complete`), but not every

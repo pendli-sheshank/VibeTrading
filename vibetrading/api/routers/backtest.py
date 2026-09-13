@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.backtest.backtest_agent import BacktestAgent
@@ -13,22 +13,31 @@ from vibetrading.api.deps import get_broker, get_db
 from vibetrading.auth.backend import current_active_user
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
+from vibetrading.core.exceptions import BrokerError, MarketDataUnavailableError
 from vibetrading.core.models import Stock
+from vibetrading.core.reliability import CircuitBreakerOpenError
 from vibetrading.llm.router import LLMRouter
 from vibetrading.persistence.orm_models import BacktestRunORM, UserORM
-from vibetrading.persistence.repositories import get_backtest_run, list_backtest_runs_for_stock
+from vibetrading.persistence.repositories import (
+    get_backtest_run,
+    get_stock_by_symbol,
+    list_backtest_runs_for_stock,
+)
 from vibetrading.settings.cache import get_tenant_settings
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 
 class BacktestRunRequest(BaseModel):
-    symbol: str
+    """Validated up front so bad parameters are a 422 from FastAPI with a
+    field-level message, never a 500 from somewhere deep in the engine."""
+
+    symbol: str = Field(min_length=1, max_length=32)
     start_date: datetime | None = None
     end_date: datetime | None = None
-    days: int = 180
-    warmup_days: int = 90
-    quantity: int = 1
+    days: int = Field(default=180, ge=30, le=1825)
+    warmup_days: int = Field(default=90, ge=0, le=365)
+    quantity: int = Field(default=1, ge=1, le=100_000)
 
 
 def _run_summary(run: BacktestRunORM) -> dict:
@@ -55,18 +64,36 @@ async def run_backtest(
 ) -> dict:
     end_date = payload.end_date or datetime.now(UTC)
     start_date = payload.start_date or (end_date - timedelta(days=payload.days))
+    if start_date >= end_date:
+        raise HTTPException(status_code=422, detail="start_date must be earlier than end_date.")
+
+    symbol = payload.symbol.upper()
+    stock_orm = await get_stock_by_symbol(session, user.id, symbol)
+    if stock_orm is None:
+        raise HTTPException(status_code=404, detail=f"{symbol} is not on your watchlist.")
+    stock = Stock(
+        symbol=stock_orm.symbol, exchange=stock_orm.exchange, dhan_security_id=stock_orm.dhan_security_id
+    )
 
     llm = LLMRouter(get_tenant_settings(user.id)).get_adapter(AgentType.BACKTEST)
     strategy_agent = StrategyAgent(llm=llm)
     engine = BacktestEngine(broker=broker, strategy_agent=strategy_agent, quantity=payload.quantity)
     backtest_agent = BacktestAgent(engine=engine)
 
-    stock = Stock(symbol=payload.symbol.upper())
-    result = await backtest_agent.run_and_persist(
-        session, user.id, stock, start_date, end_date, warmup_days=payload.warmup_days
-    )
-    await session.commit()
+    try:
+        result = await backtest_agent.run_and_persist(
+            session, user.id, stock, start_date, end_date, warmup_days=payload.warmup_days
+        )
+    except MarketDataUnavailableError as exc:
+        # Not a server fault: the provider has no data for this instrument or
+        # range. 422 with the provider's own words beats a 500 with none.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CircuitBreakerOpenError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except BrokerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    await session.commit()
     return result.model_dump(mode="json")
 
 

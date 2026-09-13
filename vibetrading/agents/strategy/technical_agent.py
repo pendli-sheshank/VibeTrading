@@ -5,11 +5,13 @@ from typing import Any
 
 from vibetrading.agents.base import Agent
 from vibetrading.agents.strategy.technical_indicators import (
+    MIN_CANDLES_FOR_ANALYSIS,
     candles_to_dataframe,
     compute_all_indicators,
 )
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
+from vibetrading.core.exceptions import MarketDataUnavailableError
 from vibetrading.core.models import AgentOutput, Stock
 
 
@@ -34,14 +36,15 @@ class TechnicalAgent(Agent):
             stock, "1d", now - timedelta(days=self.lookback_days), now
         )
 
-        if len(candles) < 2:
-            return AgentOutput(
-                agent_type=self.agent_type,
-                stock_symbol=stock.symbol,
-                timestamp=now,
-                confidence=0.0,
-                summary="Insufficient historical data to compute indicators.",
-                raw_data={},
+        if len(candles) < MIN_CANDLES_FOR_ANALYSIS:
+            # Deliberately an error, not a 0.0-confidence AgentOutput. The old
+            # behavior was indistinguishable in the UI from "we analyzed this
+            # and found nothing", so a broker returning no data looked exactly
+            # like a genuine no-conviction read. Callers surface this as
+            # DATA_INSUFFICIENT and skip the analysis entirely.
+            raise MarketDataUnavailableError(
+                f"Only {len(candles)} daily candle(s) available for {stock.symbol}; "
+                f"{MIN_CANDLES_FOR_ANALYSIS} are needed to compute indicators."
             )
 
         df = candles_to_dataframe(candles)

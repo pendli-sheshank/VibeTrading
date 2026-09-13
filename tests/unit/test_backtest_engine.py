@@ -8,6 +8,7 @@ import pytest
 from vibetrading.agents.backtest.engine import BacktestEngine
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
 from vibetrading.broker.base import BrokerClient
+from vibetrading.core.exceptions import MarketDataUnavailableError
 from vibetrading.core.models import Candle, FundsSnapshot, Stock
 from vibetrading.llm.providers.mock_provider import MockLLMAdapter
 
@@ -163,3 +164,32 @@ async def test_backtest_with_no_signals_produces_no_trades():
     assert result.total_trades == 0
     assert result.total_pnl == 0.0
     assert result.win_rate == 0.0
+
+
+async def test_backtest_with_too_little_history_says_so_instead_of_returning_an_empty_run():
+    """An empty result and "we couldn't get the data" are different answers.
+    Reporting zero trades for a broker that returned nothing would look like
+    a strategy finding no opportunities."""
+    broker = FixtureBroker([_candle(day, close=100.0) for day in range(5)])
+    engine = BacktestEngine(broker=broker, strategy_agent=StrategyAgent(llm=MockLLMAdapter()))
+
+    with pytest.raises(MarketDataUnavailableError, match="at least 20 candles"):
+        await engine.run(Stock(symbol="HDFC"), start_date=BASE_DATE, end_date=BASE_DATE + timedelta(days=5))
+
+
+async def test_backtest_tolerates_a_broker_returning_naive_timestamps():
+    """Comparing a naive candle timestamp against an aware start_date raises
+    TypeError, which reached the Backtest tab as a bare 500. Nothing in the
+    BrokerClient contract forbids naive timestamps, so the engine normalizes."""
+    naive_candles = [
+        _candle(day, close=100.0).model_copy(
+            update={"timestamp": (BASE_DATE + timedelta(days=day)).replace(tzinfo=None)}
+        )
+        for day in range(30)
+    ]
+    engine = BacktestEngine(broker=FixtureBroker(naive_candles), strategy_agent=StrategyAgent(llm=MockLLMAdapter()))
+
+    result = await engine.run(Stock(symbol="HDFC"), start_date=BASE_DATE, end_date=BASE_DATE + timedelta(days=29))
+
+    assert result.stock_symbol == "HDFC"
+    assert result.total_trades >= 0
