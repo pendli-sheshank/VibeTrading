@@ -36,9 +36,20 @@ class LiteLLMAdapter(LLMAdapter):
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 1024,
+        enable_web_search: bool = False,
     ) -> LLMResponse:
         litellm_messages = [{"role": "system", "content": system}]
         litellm_messages += [{"role": m.role, "content": m.content} for m in messages]
+
+        # `web_search_options` is LiteLLM's provider-agnostic hosted-search
+        # parameter: it maps to Anthropic's `web_search_20250305` server
+        # tool, OpenAI's web-search tool, and Gemini's Google Search
+        # grounding, so this one call site works unchanged across every
+        # provider LLMRouter can select -- no per-provider branching here.
+        # A provider/model that doesn't support it (e.g. some OpenRouter
+        # models) just ignores the option and answers from training
+        # knowledge instead of erroring.
+        extra: dict = {"web_search_options": {}} if enable_web_search else {}
 
         try:
             response = await litellm.acompletion(
@@ -47,6 +58,7 @@ class LiteLLMAdapter(LLMAdapter):
                 api_key=self.api_key,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                **extra,
             )
         except Exception as exc:
             raise LLMError(f"LLM call to {self.provider} ({model or self.model}) failed: {exc}") from exc

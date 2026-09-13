@@ -9,7 +9,6 @@ from vibetrading.config import Settings
 from vibetrading.orchestrator.scheduler import OrchestratorScheduler, build_scheduler
 from vibetrading.persistence.db import get_session
 from vibetrading.settings.cache import get_tenant_settings
-from vibetrading.settings.registry import fields_in_section
 from vibetrading.settings.service import load_settings_from_db
 
 logger = logging.getLogger(__name__)
@@ -147,17 +146,12 @@ class OrchestratorRuntime:
 def should_restart(changed_keys: set[str]) -> bool:
     """Decides whether a settings save needs an OrchestratorRuntime.restart().
 
-    True for any non-empty change, EXCEPT when every changed key belongs to
-    the risk_limits section — those already take effect on the very next
-    RiskEngine call via the mutable-settings-singleton mechanism (see
-    settings/service.py), so restarting for them would only rebuild the
-    broker/scheduler/LLM adapters for no behavioral benefit. Deliberately
-    no finer-grained per-field dirty-checking beyond this one section-level,
-    provably-safe exemption — see test_settings_registry.py, which pins
-    this section's key-set to exactly what RiskConfig.from_settings() reads
-    so the exemption can never silently drift out of sync.
+    True for any non-empty change. Risk limits used to get a section-level
+    exemption here (they applied live via the mutable-settings-singleton
+    mechanism — see settings/service.py — without needing a broker/
+    scheduler/LLM-adapter rebuild), but risk limits are no longer a
+    per-tenant, Settings-UI-editable section at all (see registry.py), so
+    every key `save_settings()` can actually be called with now belongs to
+    a section that does need a rebuild.
     """
-    if not changed_keys:
-        return False
-    risk_limit_keys = {f.key for f in fields_in_section("risk_limits")}
-    return not changed_keys.issubset(risk_limit_keys)
+    return bool(changed_keys)

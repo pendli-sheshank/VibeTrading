@@ -34,11 +34,16 @@ def make_signal(**overrides) -> Signal:
 async def test_risk_limit_change_applies_to_next_call_with_no_restart(db_session):
     """The core Phase 10 proof: RiskEngine captures `self._settings` once at
     construction (a known, pre-existing capture-once pattern in
-    risk/engine.py), yet a risk-limit change made purely through
-    save_settings() — no RiskEngine reconstruction, no restart of anything —
-    is enforced on the very next approve_and_execute() call. This works
-    because save_settings() mutates the same per-tenant Settings object in
-    place.
+    risk/engine.py), yet a change to the same per-tenant Settings object —
+    no RiskEngine reconstruction, no restart of anything — is enforced on
+    the very next approve_and_execute() call, because it's the same mutable
+    object in memory, not a fresh read.
+
+    Risk limits are env-only now (not per-tenant, Settings-UI-editable —
+    see settings/registry.py), so this mutates the tenant's live Settings
+    object directly rather than going through save_settings() as it did
+    before that change; the invariant under test (RiskEngine always reads
+    current settings, never a stale snapshot) is unchanged.
     """
     broker = MockBrokerClient(seed=1, initial_funds=1_000_000.0)
     engine = RiskEngine(broker=broker, tenant_id=TENANT_ID)  # no config= override -> reads live settings each call
@@ -47,8 +52,7 @@ async def test_risk_limit_change_applies_to_next_call_with_no_restart(db_session
     assert baseline.approved is True
     assert baseline.risk_check.rule_results["max_position_size"] is True
 
-    await save_settings(db_session, TENANT_ID, {"risk_max_position_size_inr": 1.0})
-    await db_session.commit()
+    get_tenant_settings(TENANT_ID).risk_max_position_size_inr = 1.0
 
     tightened = await engine.approve_and_execute(db_session, make_signal(), STOCK)
     assert tightened.approved is False
@@ -62,10 +66,10 @@ async def test_save_settings_rejects_unknown_key(db_session):
 
 async def test_save_settings_returns_changed_keys(db_session):
     changed = await save_settings(
-        db_session, TENANT_ID, {"risk_max_daily_loss_inr": 2500.0, "enable_scheduler": False}
+        db_session, TENANT_ID, {"agent_interval_strategy_sec": 600, "enable_scheduler": False}
     )
-    assert changed == {"risk_max_daily_loss_inr", "enable_scheduler"}
-    assert get_tenant_settings(TENANT_ID).risk_max_daily_loss_inr == 2500.0
+    assert changed == {"agent_interval_strategy_sec", "enable_scheduler"}
+    assert get_tenant_settings(TENANT_ID).agent_interval_strategy_sec == 600
     assert get_tenant_settings(TENANT_ID).enable_scheduler is False
 
 
@@ -106,7 +110,7 @@ async def test_clear_secret_reverts_to_class_default(db_session):
 
 async def test_clear_secret_rejects_non_secret_key(db_session):
     with pytest.raises(ValueError, match="not a clearable secret"):
-        await clear_secret(db_session, TENANT_ID, "risk_max_daily_loss_inr")
+        await clear_secret(db_session, TENANT_ID, "llm_default_provider")
 
 
 async def test_load_settings_from_db_with_no_rows_is_a_no_op(db_session):

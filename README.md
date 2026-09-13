@@ -13,13 +13,13 @@ mode) executed as real orders on Dhan.
 ```
 VibeTrading UI (Strategy / Risk / Backtest / Monitor / Settings)  [per tenant]
         -> AI Orchestrator (one runtime per tenant)
-             -> Research Agent   (news + social/forum sentiment collection)
+             -> Research Agent   (news + social/forum sentiment via the LLM's own hosted web search)
              -> Strategy Agent   (technical indicators + trend synthesis -> Signal)
              -> Backtest Agent   (replays Strategy logic over historical data)
              -> Risk Agent       (deterministic gatekeeper: limits, stop-loss, exposure, order validation)
              -> Execution Agent  (broker adapter: Dhan now, pluggable for others)
              -> Monitoring Agent (P&L/fills/logs/alerts/kill switch, pushes to UI)
-        -> Market Data (via broker), News/Social Data APIs, Strategy Engine (Python)
+        -> Market Data (via broker), LLM provider (web search + synthesis), Strategy Engine (Python)
 
 Deployment topology (see Deployment below):
   Web Service  (N replicas, stateless, no lease/scheduler) --\
@@ -39,7 +39,7 @@ exists to preserve across a horizontally-scaled worker fleet: see
 | Layer | Module | Notes |
 |---|---|---|
 | Auth & tenancy | `vibetrading/auth/` | `fastapi-users`, cookie sessions; `tenant_id == user.id` everywhere, no separate tenant table |
-| Research Agent | `vibetrading/agents/research/` | News + chat/sentiment collectors, LLM-synthesized combined view |
+| Research Agent | `vibetrading/agents/research/` | One LLM call with hosted web search finds and synthesizes news + social sentiment — no dedicated data-source APIs |
 | Strategy Agent | `vibetrading/agents/strategy/` | Technical indicators + LLM synthesis into a `Signal` |
 | Backtest Agent | `vibetrading/agents/backtest/` | Replays `StrategyAgent.synthesize()` unmodified over historical candles |
 | Risk Agent | `vibetrading/risk/` | Rule pipeline, kill switch, daily-loss circuit breaker, approval tokens, fencing-token lease check |
@@ -206,26 +206,34 @@ works.
 
 ## Configuration
 
-Almost everything about *how* your account trades is configured at
-runtime from the dashboard's **Settings** page (`/settings`), not `.env`
-— execution mode, Dhan credentials, LLM provider + API keys, risk limits,
-the watchlist, and news/chat data-source toggles all live in the
+The two things you actually need to configure to trade — your broker
+account and your LLM provider — are set at runtime from the dashboard's
+**Settings** page (`/settings`), not `.env`: execution mode, Dhan
+credentials, LLM provider + API key, and the watchlist all live in the
 database, scoped to your account only, and take effect without editing a
 file or restarting the process by hand. A persistent mode control in the
 top nav (and again on the Settings page) shows PAPER/LIVE and lets you
-switch between them. `.env` holds the operational, platform-wide
-variables every account shares — see `.env.example` for the full,
-documented list: `DATABASE_URL` (+ pool sizing), `HOST`/`PORT`/`LOG_LEVEL`,
+switch between them. The Research Agent needs no separate configuration
+at all — it uses whichever LLM provider/key you've already set to run its
+own hosted web search for news and social sentiment (see Research Agent
+in the architecture table above), so there's nothing else to wire up.
+
+Everything else — risk limits and every platform-wide operational
+variable — lives in `.env`; see `.env.example` for the full, documented
+list: `DATABASE_URL` (+ pool sizing), `HOST`/`PORT`/`LOG_LEVEL`,
 `WORKER_ROLE` (see Deployment), `REDIS_URL` (optional, see Multi-tenancy),
 `ALERT_WEBHOOK_URL` (optional, see Observability), `APP_SECRETS_KEY`
 (encrypts every tenant's stored secrets), `AUTH_SECRET_KEY` (signs every
-login session), and `RISK_TOKEN_SECRET` (platform-wide, not per-tenant —
-proves a `RiskApprovalToken` was minted by this platform's `RiskEngine`).
-**Setting a per-account field's old-style env var (`DHAN_ACCESS_TOKEN`,
-`ANTHROPIC_API_KEY`, `RISK_MAX_POSITION_SIZE_INR`, etc.) directly in `.env`
-has no lasting effect** — on every startup, each of those fields is reset
-to either its stored per-tenant database value or its built-in default,
-discarding whatever `.env` says. Use the Settings UI.
+login session), `RISK_TOKEN_SECRET` (platform-wide, not per-tenant —
+proves a `RiskApprovalToken` was minted by this platform's `RiskEngine`),
+and the `RISK_MAX_*`/`RISK_MANDATORY_*`/`RISK_MIN_*` limits (deliberately
+env-only, not per-account Settings-UI fields — see "Enabling live
+trading" below). Changing any of these needs a restart (or redeploy) to
+take effect. **Setting a per-account field's old-style env var
+(`DHAN_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`, etc.) directly in `.env` has no
+lasting effect** — on every startup, each of those fields is reset to
+either its stored per-tenant database value or its built-in default,
+discarding whatever `.env` says. Use the Settings UI for those instead.
 
 Settings page sections, each independently saved:
 
@@ -241,25 +249,14 @@ Settings page sections, each independently saved:
 - **LLM** — provider (Anthropic/OpenAI/Gemini/OpenRouter, routed through
   one `LLMAdapter` interface via LiteLLM) + API key + optional per-agent
   model overrides. No key configured → every agent runs against
-  `MockLLMAdapter`.
-- **Risk Limits** — `max_position_size_inr`, `max_pct_capital_per_stock`,
-  `max_concurrent_positions`, `max_daily_loss_inr`, `mandatory_stop_loss_pct`,
-  `min_signal_confidence`, `max_total_exposure_pct`. Review every one of
-  these before enabling live mode; the shipped defaults are reasonable
-  placeholders, not a recommendation for your capital. Unlike every other
-  section, a risk-limit change is enforced on the *very next* trade
-  evaluation with **no restart** — `RiskEngine` reads your account's live,
-  per-tenant settings on every call.
-- **Data Sources** — each real news/chat source (NewsAPI, Twitter, Reddit,
-  Telegram, StockTwits, ValuePickr) is off by default. Enable one only
-  once you've confirmed your use is allowed under that platform's terms of
-  service — this is a compliance decision, not a technical one.
+  `MockLLMAdapter`. This same key also drives the Research Agent's web
+  search — there's no separate Data Sources section.
 
-Every secret field (Dhan access token, LLM keys, data-source credentials)
-is encrypted at rest and never round-tripped back into the page — you'll
-see a masked "•••• (configured)" / "(not set)" placeholder, and an
-explicit "Clear" checkbox is the only way to remove a stored credential;
-leaving the field blank on save always means "leave it unchanged."
+Every secret field (Dhan access token, LLM keys) is encrypted at rest and
+never round-tripped back into the page — you'll see a masked
+"•••• (configured)" / "(not set)" placeholder, and an explicit "Clear"
+checkbox is the only way to remove a stored credential; leaving the field
+blank on save always means "leave it unchanged."
 
 **Switching to live mode requires explicit confirmation, enforced by the
 server, not just the UI**: clicking "Switch to live" expands an inline
@@ -269,11 +266,10 @@ confirmation was actually submitted, and returns `400` leaving the mode
 unchanged otherwise. Switching back to paper is always one click, no
 confirmation needed.
 
-Saving Execution & Broker, Watchlist, LLM, or Data Sources settings
+Saving any Settings section (Execution & Broker, Watchlist, or LLM)
 restarts the orchestrator's broker + scheduler in the background (an
 in-flight job is always drained first, never cancelled mid-flight) so the
-change takes effect immediately; a Risk Limits-only save skips this,
-since those already apply live. If a save can't be applied — a typo'd
+change takes effect immediately. If a save can't be applied — a typo'd
 credential, the `dhanhq` extra not being installed — the *previous*,
 working configuration keeps running untouched and the Settings page
 reports what went wrong, rather than leaving the app without a broker.
@@ -458,13 +454,16 @@ correctly. Do not skip steps here.
    Strategy tab's signal history and the Monitor tab's audit log. A
    backtest (`/backtest` or `scripts/run_backtest.py`) is a sanity check on
    the technical half of the strategy, not a substitute for watching it run.
-2. **Review every risk limit** on the Settings page's Risk Limits section
-   (max position size, max % capital per stock, max concurrent positions,
-   max daily loss, mandatory stop-loss %, min signal confidence, max total
-   exposure %). The shipped defaults are placeholders sized for a
+2. **Review every risk limit** — the `RISK_MAX_POSITION_SIZE_INR`,
+   `RISK_MAX_PCT_CAPITAL_PER_STOCK`, `RISK_MAX_CONCURRENT_POSITIONS`,
+   `RISK_MAX_DAILY_LOSS_INR`, `RISK_MANDATORY_STOP_LOSS_PCT`,
+   `RISK_MIN_SIGNAL_CONFIDENCE`, and `RISK_MAX_TOTAL_EXPOSURE_PCT` env vars
+   (see Configuration above; current values are also shown read-only on the
+   Risk tab). The shipped defaults are placeholders sized for a
    hypothetical mid-size account — set them to numbers you would be fine
    losing in the worst case, because the worst case is what a risk limit
-   exists for. These apply on your very next save, with no restart needed.
+   exists for. Unlike the Settings UI fields, these need a restart (or
+   redeploy) to take effect.
 3. **Set a real risk approval token secret.** This is a platform-wide
    operator setting, not per-account — set `RISK_TOKEN_SECRET` in `.env`
    (or your deployment's environment) to a real random value before
@@ -543,14 +542,12 @@ realtime fan-out, reliability/observability hardening, and CI/CD/deployment
   news/sentiment exists to replay, so `BacktestEngine` synthesizes signals
   from technical output alone. Live confidence (which also weighs
   Research) will differ from backtested confidence for the same setup.
-- **Real chat/news sources are best-effort integrations**, not
-  production-hardened clients: `TwitterChatSource` and
-  `NewsAPISource` use documented REST endpoints but aren't tested against
-  live accounts in this repo; `RedditChatSource` uses the unauthenticated
-  public endpoint (more rate-limited than OAuth); `TelegramChatSource` is a
-  stub pending an authenticated MTProto client; `ValuePickrChatSource`
-  depends on an undocumented Discourse search endpoint. All are off by
-  default.
+- **The Research Agent's web search quality depends on the configured LLM
+  provider/model**, not on VibeTrading. `web_search_options` is passed
+  through LiteLLM uniformly (see `LiteLLMAdapter.complete`), but not every
+  provider/model actually has a hosted web-search tool — one that doesn't
+  just answers from training knowledge instead of erroring, so research
+  quality (and how current it is) will vary by provider.
 - **Dhan's realized daily P&L** isn't cheaply queryable per fill, so
   `DhanBrokerClient.place_order` reports `realized_pnl=0.0` — meaning the
   daily-loss circuit breaker won't see live-mode losses until a dedicated

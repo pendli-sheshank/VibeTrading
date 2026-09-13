@@ -76,12 +76,9 @@ async def _settings_context(session: AsyncSession, tenant_id: int) -> dict[str, 
         "active_page": "settings",
         "settings": settings,
         "stocks": stocks,
-        "config": RiskConfig.from_settings(settings),
         "sections": {
             "execution_broker": [f for f in fields_in_section("execution_broker") if f.key != _MODE_KEY],
             "llm": fields_in_section("llm"),
-            "risk_limits": fields_in_section("risk_limits"),
-            "data_sources": fields_in_section("data_sources"),
         },
     }
 
