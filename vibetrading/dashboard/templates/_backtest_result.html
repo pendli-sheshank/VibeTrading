@@ -1,13 +1,33 @@
-<section class="card">
-  <h2>{{ result.stock_symbol }} — {{ result.start_date.strftime("%Y-%m-%d") }} to {{ result.end_date.strftime("%Y-%m-%d") }}</h2>
-  <table class="kv-table">
-    <tr><td>Total trades</td><td>{{ result.total_trades }}</td></tr>
-    <tr><td>Win rate</td><td>{{ "%.0f%%" | format(result.win_rate * 100) }}</td></tr>
-    <tr><td>Total P&amp;L</td><td>{{ "%+.2f" | format(result.total_pnl) }}</td></tr>
-    <tr><td>Max drawdown</td><td>{{ "%.2f" | format(result.max_drawdown) }}</td></tr>
-  </table>
+<div class="page-head">
+  <div class="page-head-text">
+    <h1 style="font-size: 17px;">{{ result.stock_symbol }} backtest</h1>
+    <p class="page-subtitle">{{ result.start_date.strftime("%Y-%m-%d") }} to {{ result.end_date.strftime("%Y-%m-%d") }}</p>
+  </div>
+</div>
 
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total trades</div>
+    <div class="stat-value">{{ result.total_trades }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Win rate</div>
+    <div class="stat-value">{{ "%.0f%%" | format(result.win_rate * 100) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total P&amp;L</div>
+    <div class="stat-value {{ 'positive' if result.total_pnl > 0 else ('negative' if result.total_pnl < 0 else '') }}">{{ "%+.2f" | format(result.total_pnl) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Max drawdown</div>
+    <div class="stat-value">{{ "%.2f" | format(result.max_drawdown) }}</div>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-header"><h2 class="card-title">Trades</h2></div>
   {% if result.trades %}
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Direction</th><th>Entry</th><th>Exit</th><th>Entry price</th><th>Exit price</th><th>P&amp;L</th></tr></thead>
     <tbody>
@@ -23,7 +43,8 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
-  <p class="muted">No trades triggered in this window.</p>
+  <p class="empty-state">No trades triggered in this window.</p>
   {% endif %}
 </section>

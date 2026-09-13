@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 {% block title %} — Risk{% endblock %}
 {% block content %}
-<h1>Risk</h1>
+<div class="page-head">
+  <div class="page-head-text">
+    <h1>Risk</h1>
+    <p class="page-subtitle">Kill switch, daily P&amp;L, configured limits and recent risk-rule rejections.</p>
+  </div>
+</div>
 
 {% include "_risk_panel.html" %}
 
 <section class="card">
-  <h2>Recent risk-rule rejections</h2>
+  <div class="card-header"><h2 class="card-title">Recent risk-rule rejections</h2></div>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>When</th><th>Stock</th><th>Rule</th><th>Reason</th></tr></thead>
     <tbody>
@@ -18,9 +24,10 @@
         <td>{{ event.reason }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="muted">No risk-rule rejections recorded.</td></tr>
+      <tr><td colspan="4" class="empty-state">No risk-rule rejections recorded.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endblock %}

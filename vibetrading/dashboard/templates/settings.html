@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %} — Settings{% endblock %}
 {% block content %}
-<h1>Settings</h1>
+<div class="page-head">
+  <div class="page-head-text">
+    <h1>Settings</h1>
+    <p class="page-subtitle">Broker credentials, agent intervals, your watchlist, and the LLM provider every agent runs on.</p>
+  </div>
+</div>
 
 {% include "_settings_execution_broker.html" %}
 {% include "_settings_watchlist.html" %}

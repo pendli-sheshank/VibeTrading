@@ -1,18 +1,36 @@
 {% extends "base.html" %}
 {% block title %} — Monitor{% endblock %}
 {% block content %}
-<h1>Monitor</h1>
+<div class="page-head">
+  <div class="page-head-text">
+    <h1>Monitor</h1>
+    <p class="page-subtitle">Live account funds, open positions, recent orders and the risk-checked audit trail.</p>
+  </div>
+</div>
+
+{% set total_pnl = positions | sum(attribute="unrealized_pnl") %}
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Available balance</div>
+    <div class="stat-value">{{ "%.2f" | format(funds.available_balance) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Used margin</div>
+    <div class="stat-value">{{ "%.2f" | format(funds.used_margin) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Open positions</div>
+    <div class="stat-value">{{ positions | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Unrealized P&amp;L</div>
+    <div class="stat-value {{ 'positive' if total_pnl > 0 else ('negative' if total_pnl < 0 else '') }}">{{ "%+.2f" | format(total_pnl) }}</div>
+  </div>
+</div>
 
 <section class="card">
-  <h2>Funds</h2>
-  <table class="kv-table">
-    <tr><td>Available balance</td><td>{{ "%.2f" | format(funds.available_balance) }}</td></tr>
-    <tr><td>Used margin</td><td>{{ "%.2f" | format(funds.used_margin) }}</td></tr>
-  </table>
-</section>
-
-<section class="card">
-  <h2>Open positions</h2>
+  <div class="card-header"><h2 class="card-title">Open positions</h2></div>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Symbol</th><th>Quantity</th><th>Avg price</th><th>Unrealized P&amp;L</th><th>Stop-loss</th></tr></thead>
     <tbody>
@@ -25,14 +43,16 @@
         <td>{{ "%.2f" | format(position.stop_loss_price) if position.stop_loss_price is not none else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="muted">No open positions.</td></tr>
+      <tr><td colspan="5" class="empty-state">No open positions.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="card">
-  <h2>Recent orders</h2>
+  <div class="card-header"><h2 class="card-title">Recent orders</h2></div>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>When</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th><th>Mode</th><th>Fill price</th></tr></thead>
     <tbody>
@@ -47,14 +67,16 @@
         <td>{{ "%.2f" | format(order.filled_price) if order.filled_price is not none else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="muted">No orders yet.</td></tr>
+      <tr><td colspan="7" class="empty-state">No orders yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="card">
-  <h2>Audit log</h2>
+  <div class="card-header"><h2 class="card-title">Audit log</h2></div>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>When</th><th>Status</th><th>Mode</th><th>Order ID</th><th>Risk checks</th></tr></thead>
     <tbody>
@@ -71,9 +93,10 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="muted">No audit entries yet.</td></tr>
+      <tr><td colspan="5" class="empty-state">No audit entries yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endblock %}

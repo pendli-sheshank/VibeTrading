@@ -1,39 +1,44 @@
 {% extends "base.html" %}
 {% block title %} — Strategy{% endblock %}
 {% block content %}
-<h1>Strategy — Watchlist</h1>
-<p class="muted">Latest agent signal per stock. Click a symbol for the full Research/Technical breakdown.</p>
+<div class="page-head">
+  <div class="page-head-text">
+    <h1>Strategy — Watchlist</h1>
+    <p class="page-subtitle">Latest agent signal per stock. Click a card for the full Research/Technical breakdown.</p>
+  </div>
+</div>
 
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>Symbol</th>
-      <th>Technical confidence</th>
-      <th>Research confidence</th>
-      <th>Latest signal</th>
-      <th>Signal confidence</th>
-      <th>When</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td><a href="/stock/{{ row.symbol }}">{{ row.symbol }}</a></td>
-      <td>{{ "%.0f%%" | format(row.technical.confidence * 100) if row.technical else "—" }}</td>
-      <td>{{ "%.0f%%" | format(row.research.confidence * 100) if row.research else "—" }}</td>
-      <td>
-        {% if row.signal %}
-          <span class="action-badge action-{{ row.signal.action }}">{{ row.signal.action | upper }}</span>
-        {% else %}
-          —
-        {% endif %}
-      </td>
-      <td>{{ "%.0f%%" | format(row.signal.confidence * 100) if row.signal else "—" }}</td>
-      <td>{{ row.signal.timestamp.strftime("%Y-%m-%d %H:%M") if row.signal else "—" }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6" class="muted">No agent data yet. The orchestrator hasn't run any cycles.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="card-grid">
+  {% for row in rows %}
+  <a class="card symbol-card" href="/stock/{{ row.symbol }}">
+    <div class="symbol-card-head">
+      <span class="symbol-name">{{ row.symbol }}</span>
+      {% if row.signal %}
+        <span class="action-badge action-{{ row.signal.action }}">{{ row.signal.action | upper }}</span>
+      {% else %}
+        <span class="badge muted">no signal</span>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="confidence-row"><span>Technical</span><span>{{ "%.0f%%" | format(row.technical.confidence * 100) if row.technical else "—" }}</span></div>
+      <div class="confidence-bar"><span style="width: {{ (row.technical.confidence * 100) if row.technical else 0 }}%"></span></div>
+    </div>
+    <div>
+      <div class="confidence-row"><span>Research</span><span>{{ "%.0f%%" | format(row.research.confidence * 100) if row.research else "—" }}</span></div>
+      <div class="confidence-bar"><span style="width: {{ (row.research.confidence * 100) if row.research else 0 }}%"></span></div>
+    </div>
+
+    <div class="symbol-card-when">
+      {% if row.signal %}
+        Signal confidence {{ "%.0f%%" | format(row.signal.confidence * 100) }} · {{ row.signal.timestamp.strftime("%Y-%m-%d %H:%M") }}
+      {% else %}
+        No agent data yet
+      {% endif %}
+    </div>
+  </a>
+  {% else %}
+  <div class="card empty-state">No agent data yet. The orchestrator hasn't run any cycles — add a stock under Settings to get started.</div>
+  {% endfor %}
+</div>
 {% endblock %}

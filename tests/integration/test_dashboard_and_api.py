@@ -12,9 +12,10 @@ from vibetrading.api.app import app
 from vibetrading.api.deps import get_broker, get_db
 from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
-from vibetrading.core.enums import ActionType, SignalSource
+from vibetrading.core.enums import ActionType, AgentType, SignalSource
 from vibetrading.core.models import Signal, Stock
 from vibetrading.persistence.orm_models import UserORM
+from vibetrading.persistence.repositories import get_latest_agent_output, upsert_stock
 from vibetrading.risk.engine import RiskEngine
 
 FAKE_USER = UserORM(id=1, email="test@example.com", hashed_password="x", is_active=True)
@@ -145,6 +146,45 @@ async def test_monitor_page_loads(api_client):
     response = await client.get("/monitor")
     assert response.status_code == 200
     assert "Monitor" in response.text
+
+
+async def test_stock_detail_page_loads_with_no_analysis_yet(api_client):
+    client, session_factory, _ = api_client
+    async with session_factory() as session:
+        await upsert_stock(session, FAKE_USER.id, Stock(symbol="RELIANCE"))
+        await session.commit()
+
+    response = await client.get("/stock/RELIANCE")
+    assert response.status_code == 200
+    assert "Analyze now" in response.text
+    assert "No technical read yet" in response.text
+    assert "No research read yet" in response.text
+
+
+async def test_stock_analyze_endpoint_runs_both_agents_and_persists(api_client):
+    client, session_factory, _ = api_client
+    async with session_factory() as session:
+        await upsert_stock(session, FAKE_USER.id, Stock(symbol="RELIANCE"))
+        await session.commit()
+
+    response = await client.post("/stock/RELIANCE/analyze")
+    assert response.status_code == 200
+    assert "Technical Agent" in response.text
+    assert "Research Agent" in response.text
+    assert "No technical read yet" not in response.text
+    assert "No research read yet" not in response.text
+
+    async with session_factory() as session:
+        technical = await get_latest_agent_output(session, FAKE_USER.id, "RELIANCE", AgentType.TECHNICAL.value)
+        research = await get_latest_agent_output(session, FAKE_USER.id, "RELIANCE", AgentType.RESEARCH.value)
+    assert technical is not None
+    assert research is not None
+
+
+async def test_stock_analyze_endpoint_404s_for_a_symbol_not_on_the_watchlist(api_client):
+    client, _, _ = api_client
+    response = await client.post("/stock/NOPE/analyze")
+    assert response.status_code == 404
 
 
 async def test_system_mode_endpoint(api_client):
