@@ -1,7 +1,11 @@
 {% import "_settings_field_macros.html" as macros %}
 <section class="card" id="settings-execution_broker">
   <div class="card-header"><h2 class="card-title">Execution &amp; Broker</h2></div>
-  <p class="settings-section-desc">Broker credentials and how often each agent runs. Dhan-only for now.</p>
+  <p class="settings-section-desc">
+    Broker credentials and how often each agent runs. Dhan-only for now, and used <strong>only for
+    trading</strong> — placing orders and reading positions/funds. Analysis and backtests run on free
+    market-data providers keyed by ticker, so they work before any broker is configured.
+  </p>
 
   {% set dom_id = "settings-mode-control" %}
   {% include "_mode_control.html" %}

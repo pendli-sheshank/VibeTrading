@@ -21,6 +21,11 @@ EXCLUDED_FIELDS = {
     "watchlist",
     "vibetrading_kill_switch",
     "vibetrading_kill_switch_mode",
+    # Env-only, and deliberately not a per-tenant UI field: "live" is right
+    # for every real deployment and needs no configuration (the free
+    # providers take no API key), while "simulated" exists for offline
+    # development. Keeps the Settings page to broker + LLM.
+    "market_data_provider",
     # Env-only: not per-tenant Settings-UI-editable (see registry.py) --
     # RiskConfig.from_settings() reads these straight off Settings, not
     # through the registry.

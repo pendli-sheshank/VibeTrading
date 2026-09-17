@@ -19,6 +19,7 @@ from vibetrading.config import get_settings
 from vibetrading.dashboard.routes import router as dashboard_router
 from vibetrading.dashboard.routes_settings import router as settings_router
 from vibetrading.logging_conf import bind_request_id, configure_logging
+from vibetrading.marketdata.providers import close_market_data_providers
 from vibetrading.orchestrator.manager import MultiTenantRuntimeManager
 from vibetrading.persistence.db import init_db
 from vibetrading.rate_limit import limiter
@@ -48,6 +49,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await manager.shutdown_all()
+        # Market-data providers pool HTTP connections for the life of the
+        # process; close them so shutdown doesn't leave sockets open.
+        await close_market_data_providers()
 
 
 async def _not_authenticated_handler(request: Request, exc: NotAuthenticated) -> Response:

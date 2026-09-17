@@ -9,10 +9,10 @@ from vibetrading.agents.strategy.technical_indicators import (
     candles_to_dataframe,
     compute_all_indicators,
 )
-from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import ActionType, AgentType
 from vibetrading.core.exceptions import MarketDataUnavailableError
 from vibetrading.core.models import AgentOutput, BacktestResult, Candle, Stock, TradeLogEntry
+from vibetrading.marketdata.providers.base import MarketDataProvider
 
 MIN_WARMUP_CANDLES = 20
 
@@ -40,15 +40,15 @@ class BacktestEngine:
     differ.
     """
 
-    def __init__(self, broker: BrokerClient, strategy_agent: StrategyAgent, quantity: int = 1):
-        self.broker = broker
+    def __init__(self, market_data: MarketDataProvider, strategy_agent: StrategyAgent, quantity: int = 1):
+        self.market_data = market_data
         self.strategy_agent = strategy_agent
         self.quantity = quantity
 
     async def run(
         self, stock: Stock, start_date: datetime, end_date: datetime, warmup_days: int = 90
     ) -> BacktestResult:
-        all_candles = await self.broker.get_historical_candles(
+        all_candles = await self.market_data.get_historical_candles(
             stock, "1d", start_date - timedelta(days=warmup_days), end_date
         )
         all_candles = sorted(_normalize_timestamps(all_candles), key=lambda c: c.timestamp)
@@ -57,7 +57,7 @@ class BacktestEngine:
         if len(all_candles) < MIN_WARMUP_CANDLES:
             raise MarketDataUnavailableError(
                 f"Backtesting {stock.symbol} needs at least {MIN_WARMUP_CANDLES} candles of history; "
-                f"the broker returned {len(all_candles)} for "
+                f"the market-data provider returned {len(all_candles)} for "
                 f"{start_date:%Y-%m-%d}..{end_date:%Y-%m-%d} (including {warmup_days} warm-up days)."
             )
 
@@ -184,8 +184,8 @@ def _as_utc(moment: datetime) -> datetime:
 def _normalize_timestamps(candles: list[Candle]) -> list[Candle]:
     """Put every candle on a timezone-aware footing before any comparison.
 
-    A broker that returns naive timestamps (nothing in the BrokerClient
-    contract forbids it) used to make `start_date <= c.timestamp` raise
+    A provider that returns naive timestamps (nothing in the
+    MarketDataProvider contract forbids it) used to make `start_date <= c.timestamp` raise
     "can't compare offset-naive and offset-aware datetimes" — an unhandled
     TypeError surfacing as a 500 from the Backtest tab.
     """

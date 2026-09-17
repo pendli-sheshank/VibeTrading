@@ -9,11 +9,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from tests.conftest import make_test_engine, reset_schema, seed_test_users
 from vibetrading.api.app import app
-from vibetrading.api.deps import get_broker, get_db
+from vibetrading.api.deps import get_broker, get_db, get_market_data
 from vibetrading.auth.backend import current_active_user, current_dashboard_user
 from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import ActionType, AgentType, SignalSource
 from vibetrading.core.models import Signal, Stock
+from vibetrading.marketdata.providers import SimulatedMarketDataProvider
 from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import get_latest_agent_output, upsert_stock
 from vibetrading.risk.engine import RiskEngine
@@ -36,6 +37,7 @@ async def api_client():
     broker = MockBrokerClient(seed=11)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_broker] = lambda: broker
+    app.dependency_overrides[get_market_data] = lambda: SimulatedMarketDataProvider(seed=11)
     app.dependency_overrides[current_active_user] = lambda: FAKE_USER
     app.dependency_overrides[current_dashboard_user] = lambda: FAKE_USER
 
@@ -115,8 +117,8 @@ async def _seed_stock(session_factory, symbol: str, **kwargs) -> None:
 
 async def test_backtest_run_endpoint_persists_and_returns_result(api_client):
     client, session_factory, _ = api_client
-    # Backtesting resolves the stock from the watchlist so it can pass the
-    # broker security ID through -- an unknown symbol is a 404, not a run.
+    # Backtesting resolves the stock from the watchlist first, so an unknown
+    # symbol is a clear 404 rather than an attempted run.
     await _seed_stock(session_factory, "RELIANCE")
 
     response = await client.post(

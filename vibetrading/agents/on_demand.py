@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.research.agent import ResearchAgent
 from vibetrading.agents.strategy.technical_agent import TechnicalAgent
-from vibetrading.broker.base import BrokerClient
 from vibetrading.config import Settings
 from vibetrading.core.enums import AgentType, DataStatus, MarketDirection
 from vibetrading.core.exceptions import BrokerError, LLMError, MarketDataUnavailableError
@@ -16,6 +15,7 @@ from vibetrading.core.models import AgentOutput, MarketSnapshot, Stock
 from vibetrading.core.reliability import CircuitBreakerOpenError
 from vibetrading.llm.router import LLMRouter
 from vibetrading.marketdata import build_market_snapshot
+from vibetrading.marketdata.providers.base import MarketDataProvider
 from vibetrading.persistence.repositories import save_agent_output
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def _agent_dict(output: AgentOutput | None) -> dict | None:
 
 
 async def analyze_stock(
-    broker: BrokerClient,
+    market_data: MarketDataProvider,
     settings: Settings,
     stock: Stock,
     session: AsyncSession | None = None,
@@ -90,13 +90,13 @@ async def analyze_stock(
     Order matters: the market snapshot is collected and checked FIRST. If
     the data needed for a technical read isn't there, no analysis runs at
     all and the result carries DATA_INSUFFICIENT with the provider's own
-    explanation -- rather than the previous behavior, where a broker error
+    explanation -- rather than the previous behavior, where a data error
     was swallowed into a 0%-confidence card with no stated reason.
 
     Persists whatever it did produce when a session is supplied, exactly as
     a scheduled orchestrator cycle would.
     """
-    snapshot = await build_market_snapshot(broker, stock)
+    snapshot = await build_market_snapshot(market_data, stock)
 
     if not snapshot.is_sufficient_for_analysis:
         return AnalysisResult(
@@ -112,7 +112,7 @@ async def analyze_stock(
         )
 
     llm = LLMRouter(settings).get_adapter(AgentType.RESEARCH)
-    technical_task = TechnicalAgent(broker=broker).analyze(stock, context={})
+    technical_task = TechnicalAgent(market_data=market_data).analyze(stock, context={})
     research_task = ResearchAgent(llm=llm).analyze(stock, context={})
     technical_raw, research_raw = await asyncio.gather(technical_task, research_task, return_exceptions=True)
 

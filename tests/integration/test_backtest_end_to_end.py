@@ -5,16 +5,16 @@ from datetime import UTC, datetime, timedelta
 from vibetrading.agents.backtest.backtest_agent import BacktestAgent
 from vibetrading.agents.backtest.engine import BacktestEngine
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
-from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.models import Stock
 from vibetrading.llm.providers.mock_provider import MockLLMAdapter
+from vibetrading.marketdata.providers import SimulatedMarketDataProvider
 from vibetrading.persistence.repositories import get_backtest_run, list_backtest_runs_for_stock
 
 
 async def test_backtest_agent_persists_result(db_session):
-    broker = MockBrokerClient(seed=3)
+    provider = SimulatedMarketDataProvider(seed=3)
     strategy_agent = StrategyAgent(llm=MockLLMAdapter())  # safe-HOLD default -> zero trades, still a valid run
-    engine = BacktestEngine(broker=broker, strategy_agent=strategy_agent)
+    engine = BacktestEngine(market_data=provider, strategy_agent=strategy_agent)
     backtest_agent = BacktestAgent(engine=engine)
 
     stock = Stock(symbol="RELIANCE")

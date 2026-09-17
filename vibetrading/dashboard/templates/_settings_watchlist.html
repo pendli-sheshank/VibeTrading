@@ -1,8 +1,9 @@
 <section class="card" id="settings-watchlist">
   <div class="card-header"><h2 class="card-title">Watchlist</h2></div>
   <p class="settings-section-desc">
-    DhanBrokerClient can only place orders for a stock once its Dhan security ID is set here
-    (e.g. from Dhan's published instrument master).
+    Analysis needs nothing but the symbol — prices come from free market-data providers keyed by
+    ticker. The Dhan security ID below is optional and only needed to <em>place orders</em> for a
+    stock (Dhan addresses instruments by ID; it publishes an instrument master listing them).
   </p>
 
   <div class="settings-table-wrap">
@@ -19,7 +20,7 @@
         <tr>
           <th>Symbol</th>
           <th>Exchange</th>
-          <th>Dhan Security ID</th>
+          <th>Dhan Security ID <span class="muted">(orders only)</span></th>
           <th>Name</th>
           <th>Sector</th>
           <th></th>
@@ -85,7 +86,7 @@
           <input type="text" name="exchange" value="NSE" />
         </label>
         <label class="settings-field">
-          <span>Dhan Security ID</span>
+          <span>Dhan Security ID <small class="muted">(optional — orders only)</small></span>
           <input type="text" name="dhan_security_id" placeholder="e.g. 2885" />
         </label>
         <label class="settings-field">

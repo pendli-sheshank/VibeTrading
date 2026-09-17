@@ -12,7 +12,7 @@ from vibetrading.agents.backtest.engine import BacktestEngine
 from vibetrading.agents.on_demand import analyze_stock
 from vibetrading.agents.strategy.performance_tracker import get_performance_summary
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
-from vibetrading.api.deps import get_broker, get_db
+from vibetrading.api.deps import get_broker, get_db, get_market_data
 from vibetrading.auth.backend import current_dashboard_user
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType, KillSwitchMode
@@ -22,6 +22,7 @@ from vibetrading.core.reliability import CircuitBreakerOpenError
 from vibetrading.dashboard.templating import templates
 from vibetrading.llm.router import LLMRouter
 from vibetrading.marketdata import build_market_snapshot
+from vibetrading.marketdata.providers import MarketDataProvider
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import (
@@ -132,7 +133,7 @@ async def stock_market_data(
     symbol: str,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_dashboard_user),
 ):
     """The live market data an analysis would run on, rendered before any
@@ -140,7 +141,7 @@ async def stock_market_data(
     is stated up front."""
     symbol = symbol.upper()
     stock = await _resolve_watchlist_stock(session, user.id, symbol)
-    snapshot = await build_market_snapshot(broker, stock)
+    snapshot = await build_market_snapshot(market_data, stock)
     return templates.TemplateResponse(
         request, "_market_data.html", {"symbol": symbol, "snapshot": snapshot}
     )
@@ -151,7 +152,7 @@ async def stock_analyze(
     symbol: str,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_dashboard_user),
 ):
     """Runs the Research and Technical agents for one stock right now, on
@@ -165,7 +166,7 @@ async def stock_analyze(
     stock = await _resolve_watchlist_stock(session, user.id, symbol)
 
     result = await analyze_stock(
-        broker=broker,
+        market_data=market_data,
         settings=get_tenant_settings(user.id),
         stock=stock,
         session=session,
@@ -269,7 +270,7 @@ async def backtest_run(
     symbol: str = Form(...),
     days: int = Form(180),
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_dashboard_user),
 ):
     """Run a backtest and render the result, or render why it couldn't run.
@@ -305,7 +306,7 @@ async def backtest_run(
 
     settings = get_tenant_settings(user.id)
     llm = LLMRouter(settings).get_adapter(AgentType.BACKTEST)
-    engine = BacktestEngine(broker=broker, strategy_agent=StrategyAgent(llm=llm))
+    engine = BacktestEngine(market_data=market_data, strategy_agent=StrategyAgent(llm=llm))
     backtest_agent = BacktestAgent(engine=engine)
 
     try:

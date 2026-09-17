@@ -9,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vibetrading.agents.backtest.backtest_agent import BacktestAgent
 from vibetrading.agents.backtest.engine import BacktestEngine
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
-from vibetrading.api.deps import get_broker, get_db
+from vibetrading.api.deps import get_db, get_market_data
 from vibetrading.auth.backend import current_active_user
-from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
 from vibetrading.core.exceptions import BrokerError, MarketDataUnavailableError
 from vibetrading.core.models import Stock
 from vibetrading.core.reliability import CircuitBreakerOpenError
 from vibetrading.llm.router import LLMRouter
+from vibetrading.marketdata.providers import MarketDataProvider
 from vibetrading.persistence.orm_models import BacktestRunORM, UserORM
 from vibetrading.persistence.repositories import (
     get_backtest_run,
@@ -59,7 +59,7 @@ def _run_summary(run: BacktestRunORM) -> dict:
 async def run_backtest(
     payload: BacktestRunRequest,
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_active_user),
 ) -> dict:
     end_date = payload.end_date or datetime.now(UTC)
@@ -77,7 +77,7 @@ async def run_backtest(
 
     llm = LLMRouter(get_tenant_settings(user.id)).get_adapter(AgentType.BACKTEST)
     strategy_agent = StrategyAgent(llm=llm)
-    engine = BacktestEngine(broker=broker, strategy_agent=strategy_agent, quantity=payload.quantity)
+    engine = BacktestEngine(market_data=market_data, strategy_agent=strategy_agent, quantity=payload.quantity)
     backtest_agent = BacktestAgent(engine=engine)
 
     try:

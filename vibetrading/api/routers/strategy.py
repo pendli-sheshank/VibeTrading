@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vibetrading.agents.on_demand import analyze_stock
 from vibetrading.agents.strategy.performance_tracker import get_performance_summary
-from vibetrading.api.deps import get_broker, get_db
+from vibetrading.api.deps import get_db, get_market_data
 from vibetrading.auth.backend import current_active_user
-from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import Stock
 from vibetrading.marketdata import build_market_snapshot
+from vibetrading.marketdata.providers import MarketDataProvider
 from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import (
     get_latest_agent_output,
@@ -46,10 +46,10 @@ def _signal_dict(signal) -> dict:
 
 
 @router.get("/{symbol}/market-data")
-async def get_market_data(
+async def get_market_data_snapshot(
     symbol: str,
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_active_user),
 ) -> dict:
     """Live market data for one watchlist stock, with per-section status.
@@ -59,7 +59,7 @@ async def get_market_data(
     instrument, not a failed request.
     """
     stock = await _watchlist_stock(session, user.id, symbol)
-    snapshot = await build_market_snapshot(broker, stock)
+    snapshot = await build_market_snapshot(market_data, stock)
     return snapshot.model_dump(mode="json")
 
 
@@ -67,7 +67,7 @@ async def get_market_data(
 async def analyze(
     symbol: str,
     session: AsyncSession = Depends(get_db),
-    broker: BrokerClient = Depends(get_broker),
+    market_data: MarketDataProvider = Depends(get_market_data),
     user: UserORM = Depends(current_active_user),
 ) -> dict:
     """Run both agents for one stock now and return the structured result.
@@ -77,7 +77,7 @@ async def analyze(
     """
     stock = await _watchlist_stock(session, user.id, symbol)
     result = await analyze_stock(
-        broker=broker,
+        market_data=market_data,
         settings=get_tenant_settings(user.id),
         stock=stock,
         session=session,

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import ActionType, SignalSource
 from vibetrading.core.models import Signal, Stock
+from vibetrading.marketdata.providers.base import MarketDataProvider
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.risk.engine import ExecutionResult, RiskEngine
 
@@ -22,9 +23,14 @@ class StopLossMonitor:
     AGENT_INTERVAL_STOP_LOSS_MONITOR_SEC.
     """
 
-    def __init__(self, broker: BrokerClient, risk_engine: RiskEngine):
+    def __init__(self, broker: BrokerClient, risk_engine: RiskEngine, market_data: MarketDataProvider):
         self.broker = broker
         self.risk_engine = risk_engine
+        # Prices come from the market-data provider, not the broker: a
+        # position's symbol is all the broker reports back, with no security
+        # ID attached, so asking Dhan for its price needed a lookup that
+        # wasn't available here. Exits still route through the broker.
+        self.market_data = market_data
 
     async def check_all(self, session: AsyncSession) -> list[ExecutionResult]:
         positions = await self.broker.get_positions()
@@ -34,7 +40,14 @@ class StopLossMonitor:
             if position.stop_loss_price is None or position.quantity == 0:
                 continue
 
-            ltp = await self.broker.get_ltp(Stock(symbol=position.stock_symbol))
+            quote = await self.market_data.get_quote(Stock(symbol=position.stock_symbol))
+            ltp = quote.last_price
+            if ltp is None:
+                logger.warning(
+                    "No price available for %s; cannot evaluate its stop-loss this cycle.",
+                    position.stock_symbol,
+                )
+                continue
             is_long = position.quantity > 0
             breached = (is_long and ltp <= position.stop_loss_price) or (
                 not is_long and ltp >= position.stop_loss_price
