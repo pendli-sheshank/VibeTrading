@@ -1,19 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from datetime import datetime
 
-from vibetrading.core.exceptions import InvalidRiskTokenError, MarketDataUnavailableError
+from vibetrading.core.exceptions import InvalidRiskTokenError
 from vibetrading.core.models import (
-    Candle,
     FundsSnapshot,
-    OptionChainSnapshot,
     OrderRequest,
     OrderResult,
     Position,
-    Quote,
-    Stock,
 )
 from vibetrading.risk.tokens import RiskApprovalToken, verify_and_consume_token
 
@@ -59,39 +53,9 @@ class BrokerClient(ABC):
     async def get_funds(self) -> FundsSnapshot:
         ...
 
-    @abstractmethod
-    async def get_historical_candles(
-        self, stock: Stock, interval: str, from_date: datetime, to_date: datetime
-    ) -> list[Candle]:
-        ...
-
-    @abstractmethod
-    async def get_ltp(self, stock: Stock) -> float:
-        """Last traded price."""
-
-    async def get_quote(self, stock: Stock) -> Quote:
-        """Current price/OHLC/volume for one instrument.
-
-        Not abstract: a broker integration that can't serve quotes says so
-        here, and the market-data layer renders UNAVAILABLE for it. It must
-        never synthesize one from whatever else it has -- a made-up price
-        would feed straight into a real trading decision.
-        """
-        raise MarketDataUnavailableError(
-            f"{type(self).__name__} does not support quote lookups for {stock.symbol}."
-        )
-
-    async def get_option_chain(self, stock: Stock, strikes_around_atm: int = 5) -> OptionChainSnapshot:
-        """Option-chain metrics (OI, IV, volume) around the money.
-
-        Same contract as get_quote: unsupported means raise, never invent.
-        """
-        raise MarketDataUnavailableError(
-            f"{type(self).__name__} does not support option chains for {stock.symbol}."
-        )
-
-    @abstractmethod
-    async def subscribe_market_feed(
-        self, stocks: list[Stock], on_tick: Callable[[str, float], None]
-    ) -> None:
-        """Register a callback invoked with (symbol, last_traded_price) on each tick."""
+    # No market-data methods here by design. Quotes, candles and option
+    # chains come from vibetrading/marketdata/providers/, which addresses
+    # instruments by ticker. Routing analysis through the broker meant every
+    # stock needed a broker-specific security ID configured before it could
+    # even be looked at -- a setup burden for data that is public and free.
+    # The broker's job is trading: orders, positions, funds.

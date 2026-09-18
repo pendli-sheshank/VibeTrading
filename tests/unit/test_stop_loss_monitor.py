@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 
 from vibetrading.broker.base import BrokerClient
-from vibetrading.core.models import FundsSnapshot, Position
+from vibetrading.core.enums import DataStatus
+from vibetrading.core.models import FundsSnapshot, Position, Quote
+from vibetrading.marketdata.providers.base import MarketDataProvider
 from vibetrading.orchestrator.event_bus import event_bus
 from vibetrading.orchestrator.stop_loss_monitor import StopLossMonitor
 from vibetrading.risk.config import RiskConfig
@@ -12,13 +13,12 @@ from vibetrading.risk.engine import RiskEngine
 
 
 class FakePositionsBroker(BrokerClient):
-    """A broker double with fixed, controllable positions/LTP -- lets the
-    test force a stop-loss breach deterministically without depending on
-    MockBrokerClient's seeded price walk."""
+    """A broker double with fixed, controllable positions -- lets the test
+    force a stop-loss breach deterministically."""
 
     def __init__(self, positions: list[Position], ltp_by_symbol: dict[str, float]):
         self._positions = positions
-        self._ltp = ltp_by_symbol
+        self.ltp = ltp_by_symbol
         self.place_order_calls: list[tuple] = []
 
     async def place_order(self, order_request, risk_token):
@@ -31,7 +31,7 @@ class FakePositionsBroker(BrokerClient):
             order_id="stop-loss-fill-1",
             status=OrderStatus.FILLED,
             filled_quantity=order_request.quantity,
-            filled_price=self._ltp[order_request.stock_symbol],
+            filled_price=self.ltp[order_request.stock_symbol],
             realized_pnl=0.0,
         )
 
@@ -44,14 +44,21 @@ class FakePositionsBroker(BrokerClient):
     async def get_funds(self) -> FundsSnapshot:
         return FundsSnapshot(available_balance=1_000_000.0)
 
+
+
+class PriceProvider(MarketDataProvider):
+    """Fixed prices for the monitor to compare against each stop."""
+
+    name = "test-prices"
+
+    def __init__(self, ltp_by_symbol: dict[str, float]):
+        self._ltp = ltp_by_symbol
+
+    async def get_quote(self, stock) -> Quote:
+        return Quote(symbol=stock.symbol, status=DataStatus.LIVE, last_price=self._ltp[stock.symbol])
+
     async def get_historical_candles(self, stock, interval, from_date, to_date):
         return []
-
-    async def get_ltp(self, stock) -> float:
-        return self._ltp[stock.symbol]
-
-    async def subscribe_market_feed(self, stocks, on_tick: Callable) -> None:
-        return None
 
 
 def make_config(**overrides) -> RiskConfig:
@@ -81,7 +88,7 @@ async def test_stop_loss_monitor_exits_breached_long_position(db_session):
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 90.0})  # below stop
     risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
-    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
+    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine, market_data=PriceProvider(broker.ltp))
 
     queue = event_bus.subscribe(1)
     try:
@@ -112,7 +119,7 @@ async def test_stop_loss_monitor_ignores_position_within_stop(db_session):
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 98.0})  # above stop
     risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
-    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
+    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine, market_data=PriceProvider(broker.ltp))
 
     results = await monitor.check_all(db_session)
 
@@ -130,7 +137,7 @@ async def test_stop_loss_monitor_exits_breached_short_position(db_session):
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"INFY": 105.0})  # above stop for a short
     risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
-    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
+    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine, market_data=PriceProvider(broker.ltp))
 
     results = await monitor.check_all(db_session)
 
@@ -146,7 +153,7 @@ async def test_stop_loss_monitor_ignores_position_without_stop_loss(db_session):
     )
     broker = FakePositionsBroker(positions=[position], ltp_by_symbol={"TCS": 1.0})
     risk_engine = RiskEngine(broker=broker, tenant_id=1, config=make_config())
-    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine)
+    monitor = StopLossMonitor(broker=broker, risk_engine=risk_engine, market_data=PriceProvider(broker.ltp))
 
     results = await monitor.check_all(db_session)
 

@@ -9,10 +9,10 @@ from vibetrading.agents.strategy.technical_indicators import (
     candles_to_dataframe,
     compute_all_indicators,
 )
-from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import AgentType
 from vibetrading.core.exceptions import MarketDataUnavailableError
 from vibetrading.core.models import AgentOutput, Stock
+from vibetrading.marketdata.providers.base import MarketDataProvider
 
 
 class TechnicalAgent(Agent):
@@ -25,14 +25,14 @@ class TechnicalAgent(Agent):
 
     agent_type = AgentType.TECHNICAL
 
-    def __init__(self, broker: BrokerClient, lookback_days: int = 120, run_interval_seconds: int = 300):
-        self.broker = broker
+    def __init__(self, market_data: MarketDataProvider, lookback_days: int = 150, run_interval_seconds: int = 300):
+        self.market_data = market_data
         self.lookback_days = lookback_days
         self.run_interval_seconds = run_interval_seconds
 
     async def analyze(self, stock: Stock, context: dict[str, Any]) -> AgentOutput:
         now = datetime.now(UTC)
-        candles = await self.broker.get_historical_candles(
+        candles = await self.market_data.get_historical_candles(
             stock, "1d", now - timedelta(days=self.lookback_days), now
         )
 

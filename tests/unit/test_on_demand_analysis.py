@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from tests.unit.test_market_snapshot import StubBroker, make_candles
+from tests.unit.test_market_snapshot import StubProvider, make_candles
 from vibetrading.agents.on_demand import analyze_stock, combined_confidence
-from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.config import Settings
 from vibetrading.core.enums import AgentType, DataStatus, MarketDirection
 from vibetrading.core.exceptions import BrokerError
 from vibetrading.core.models import AgentOutput, Stock
+from vibetrading.marketdata.providers import SimulatedMarketDataProvider
 
 STOCK = Stock(symbol="RELIANCE")
 
@@ -18,7 +18,7 @@ def settings() -> Settings:
 
 
 async def test_analysis_over_real_data_produces_a_data_driven_confidence():
-    result = await analyze_stock(broker=MockBrokerClient(seed=3), settings=settings(), stock=STOCK)
+    result = await analyze_stock(market_data=SimulatedMarketDataProvider(seed=3), settings=settings(), stock=STOCK)
 
     assert result.analyzed is True
     assert result.technical is not None
@@ -30,10 +30,10 @@ async def test_analysis_over_real_data_produces_a_data_driven_confidence():
 
 
 async def test_insufficient_data_yields_data_insufficient_not_a_zero_percent_result():
-    """The bug this exists for: a broker with no usable data used to produce
+    """The bug this exists for: a provider with no usable data used to produce
     a 0%-confidence card that was indistinguishable from a real analysis
     finding no conviction."""
-    result = await analyze_stock(broker=StubBroker(candles=make_candles(5)), settings=settings(), stock=STOCK)
+    result = await analyze_stock(market_data=StubProvider(candles=make_candles(5)), settings=settings(), stock=STOCK)
 
     assert result.status == DataStatus.DATA_INSUFFICIENT
     assert result.analyzed is False
@@ -42,10 +42,10 @@ async def test_insufficient_data_yields_data_insufficient_not_a_zero_percent_res
     assert result.error is not None
 
 
-async def test_broker_failure_surfaces_the_real_reason_instead_of_a_silent_zero():
-    broker = StubBroker(candle_error=BrokerError("Dhan rejected historical_daily_data: DH-905 : Invalid security id"))
+async def test_provider_failure_surfaces_the_real_reason_instead_of_a_silent_zero():
+    provider = StubProvider(candle_error=BrokerError("Dhan rejected historical_daily_data: DH-905 : Invalid security id"))
 
-    result = await analyze_stock(broker=broker, settings=settings(), stock=STOCK)
+    result = await analyze_stock(market_data=provider, settings=settings(), stock=STOCK)
 
     assert result.analyzed is False
     assert result.confidence is None
@@ -62,7 +62,7 @@ async def test_a_failing_research_agent_does_not_hide_a_good_technical_read(monk
 
     monkeypatch.setattr(ResearchAgent, "analyze", boom)
 
-    result = await analyze_stock(broker=MockBrokerClient(seed=5), settings=settings(), stock=STOCK)
+    result = await analyze_stock(market_data=SimulatedMarketDataProvider(seed=5), settings=settings(), stock=STOCK)
 
     assert result.technical is not None
     assert result.research is None
@@ -87,7 +87,7 @@ def test_combined_confidence_weights_both_agents_and_is_none_when_neither_report
 
 
 async def test_analysis_result_serializes_for_the_json_api():
-    result = await analyze_stock(broker=MockBrokerClient(seed=11), settings=settings(), stock=STOCK)
+    result = await analyze_stock(market_data=SimulatedMarketDataProvider(seed=11), settings=settings(), stock=STOCK)
     payload = result.to_dict()
 
     assert payload["symbol"] == "RELIANCE"

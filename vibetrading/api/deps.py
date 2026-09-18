@@ -5,12 +5,14 @@ from fastapi import Depends, Request
 from vibetrading.api.db_dep import get_db
 from vibetrading.auth.backend import current_active_user
 from vibetrading.broker.base import BrokerClient
+from vibetrading.marketdata.providers import MarketDataProvider, get_market_data_provider
 from vibetrading.orchestrator.manager import MultiTenantRuntimeManager
 from vibetrading.orchestrator.runtime import OrchestratorRuntime
 from vibetrading.persistence.orm_models import UserORM
 from vibetrading.risk.engine import RiskEngine
+from vibetrading.settings.cache import get_tenant_settings
 
-__all__ = ["get_broker", "get_db", "get_risk_engine", "get_runtime"]
+__all__ = ["get_broker", "get_db", "get_market_data", "get_risk_engine", "get_runtime"]
 
 
 async def get_runtime(
@@ -35,6 +37,16 @@ async def get_broker(runtime: OrchestratorRuntime = Depends(get_runtime)) -> Bro
     visible to every request, not stuck on a stale cached one.
     """
     return runtime.broker
+
+
+async def get_market_data(user: UserORM = Depends(current_active_user)) -> MarketDataProvider:
+    """The analysis data source for the calling tenant.
+
+    Separate from get_broker on purpose: analysis reads public market data by
+    ticker and needs no broker credentials or security IDs at all, so these
+    routes keep working for a tenant who has never configured a broker.
+    """
+    return get_market_data_provider(get_tenant_settings(user.id))
 
 
 def get_risk_engine(

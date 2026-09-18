@@ -16,6 +16,16 @@ class OrderRejectedError(BrokerError):
     """Raised when the broker rejects an order outright."""
 
 
+class MarketDataError(BrokerError):
+    """Raised when a market-data provider call fails transiently — a network
+    error, an HTTP 5xx, a rate limit, an unparseable body.
+
+    Subclasses BrokerError so the one "an upstream data call failed" family
+    covers both the broker and the market-data providers, and every existing
+    handler keeps working. Retryable, unlike MarketDataUnavailableError.
+    """
+
+
 class MarketDataUnavailableError(BrokerError):
     """Raised when market data genuinely cannot be obtained — the instrument
     isn't mapped to a broker security ID, the broker doesn't support that

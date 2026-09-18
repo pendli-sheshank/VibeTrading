@@ -2,21 +2,16 @@ from __future__ import annotations
 
 import random
 import uuid
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from vibetrading.broker.base import BrokerClient
-from vibetrading.core.enums import DataStatus, ExecutionMode, OrderSide, OrderStatus
-from vibetrading.core.exceptions import MarketDataUnavailableError, OrderRejectedError
+from vibetrading.core.enums import ExecutionMode, OrderSide, OrderStatus
+from vibetrading.core.exceptions import OrderRejectedError
 from vibetrading.core.models import (
-    Candle,
     FundsSnapshot,
-    OptionChainSnapshot,
     OrderRequest,
     OrderResult,
     Position,
-    Quote,
-    Stock,
 )
 from vibetrading.risk.tokens import RiskApprovalToken
 
@@ -24,11 +19,14 @@ from vibetrading.risk.tokens import RiskApprovalToken
 class MockBrokerClient(BrokerClient):
     """In-memory paper-trading broker.
 
-    Generates a deterministic (seeded) synthetic price series per symbol so
-    local dev/tests/paper mode work with zero real credentials or network
-    access. Fills every order immediately at the current synthetic LTP (or
-    the requested limit price), and tracks positions/funds in memory only —
-    nothing here is persisted or real.
+    Fills every order immediately at the requested limit price (or a
+    deterministic, seeded synthetic price) and tracks positions/funds in
+    memory only — nothing here is persisted or real, and no credentials or
+    network access are needed.
+
+    It serves no market data: analysis prices come from a market-data
+    provider, so paper mode shows the same real quotes as live mode and only
+    the *execution* is simulated.
     """
 
     def __init__(self, seed: int = 42, initial_funds: float = 1_000_000.0):
@@ -40,86 +38,17 @@ class MockBrokerClient(BrokerClient):
     def _rng_for(self, symbol: str) -> random.Random:
         return random.Random(f"{self._seed}:{symbol}")
 
-    async def get_historical_candles(
-        self, stock: Stock, interval: str, from_date: datetime, to_date: datetime
-    ) -> list[Candle]:
-        rng = self._rng_for(stock.symbol)
-        base_price = 100.0 + (rng.random() * 2000.0)
+    def _fill_price_for(self, symbol: str) -> float:
+        """A deterministic synthetic price for filling paper orders.
 
-        candles: list[Candle] = []
-        price = base_price
-        current = from_date
-        step = timedelta(days=1) if interval in ("1d", "day", "daily") else timedelta(minutes=1)
-
-        while current <= to_date:
-            pct_change = rng.gauss(0, 0.012)
-            open_price = price
-            close_price = max(0.05, open_price * (1 + pct_change))
-            high_price = max(open_price, close_price) * (1 + abs(rng.gauss(0, 0.004)))
-            low_price = min(open_price, close_price) * (1 - abs(rng.gauss(0, 0.004)))
-            volume = rng.randint(50_000, 500_000)
-
-            candles.append(
-                Candle(
-                    timestamp=current,
-                    open=round(open_price, 2),
-                    high=round(high_price, 2),
-                    low=round(low_price, 2),
-                    close=round(close_price, 2),
-                    volume=volume,
-                )
-            )
-            price = close_price
-            current += step
-
-        return candles
-
-    async def get_ltp(self, stock: Stock) -> float:
-        now = datetime.now(UTC)
-        candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=2), now)
-        return candles[-1].close if candles else 0.0
-
-    async def get_quote(self, stock: Stock) -> Quote:
-        """A quote built from the same synthetic series as the candles.
-
-        Status is always SIMULATED, never LIVE: every consumer (and every
-        screen) can tell this apart from a real market price.
+        Private to the mock: it is a fill simulator, not market data. Anything
+        that needs real prices goes to a market-data provider instead.
         """
-        now = datetime.now(UTC)
-        candles = await self.get_historical_candles(stock, "1d", now - timedelta(days=5), now)
-        if not candles:
-            raise MarketDataUnavailableError(f"No simulated series available for {stock.symbol}.")
-
-        latest = candles[-1]
-        previous_close = candles[-2].close if len(candles) > 1 else None
-        return Quote(
-            symbol=stock.symbol,
-            status=DataStatus.SIMULATED,
-            last_price=latest.close,
-            previous_close=previous_close,
-            open=latest.open,
-            high=latest.high,
-            low=latest.low,
-            close=latest.close,
-            volume=latest.volume,
-            timestamp=latest.timestamp,
-            source="mock:simulated",
-            message="Simulated paper-trading data — not a real market price.",
-        )
-
-    async def get_option_chain(self, stock: Stock, strikes_around_atm: int = 5) -> OptionChainSnapshot:
-        """Deliberately unsupported.
-
-        A believable-looking fake option chain (OI, IV, PCR) is exactly the
-        kind of fabricated market data that could drive a real trade, so the
-        mock refuses rather than generating one. Configure Dhan credentials
-        for a real chain; until then the UI shows UNAVAILABLE.
-        """
-        raise MarketDataUnavailableError(
-            f"Option-chain data for {stock.symbol} needs a live broker connection. "
-            "MockBrokerClient does not simulate option chains, because fabricated open "
-            "interest and implied volatility must never be shown as if they were real."
-        )
+        rng = self._rng_for(symbol)
+        price = 100.0 + (rng.random() * 2000.0)
+        for _ in range(5):
+            price = max(0.05, price * (1 + rng.gauss(0, 0.012)))
+        return round(price, 2)
 
     async def place_order(self, order_request: OrderRequest, risk_token: RiskApprovalToken) -> OrderResult:
         self._require_valid_token(risk_token)
@@ -127,8 +56,7 @@ class MockBrokerClient(BrokerClient):
         if order_request.quantity <= 0:
             raise OrderRejectedError("Order quantity must be positive")
 
-        ltp = await self.get_ltp(Stock(symbol=order_request.stock_symbol))
-        fill_price = order_request.limit_price or ltp
+        fill_price = order_request.limit_price or self._fill_price_for(order_request.stock_symbol)
         realized_pnl = self._apply_fill(order_request, fill_price)
 
         order_id = str(uuid.uuid4())
@@ -208,8 +136,3 @@ class MockBrokerClient(BrokerClient):
     async def get_funds(self) -> FundsSnapshot:
         return self._funds
 
-    async def subscribe_market_feed(
-        self, stocks: list[Stock], on_tick: Callable[[str, float], None]
-    ) -> None:
-        for stock in stocks:
-            on_tick(stock.symbol, await self.get_ltp(stock))

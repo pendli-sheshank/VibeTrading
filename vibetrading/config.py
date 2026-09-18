@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     # manage_leases and api/app.py's lifespan.
     worker_role: Literal["all", "web", "worker"] = "all"
 
+    # --- Market data (analysis only) ----------------------------------------
+    # Where the Research/Technical agents, the market-data panel and the
+    # backtester get prices. Deliberately NOT the broker: free providers
+    # address instruments by ticker, so analyzing a stock needs no Dhan
+    # security ID (that stays required only for placing orders). "live" uses
+    # Yahoo Finance for quotes/candles and NSE for option chains, neither of
+    # which needs an API key; "simulated" is deterministic synthetic data for
+    # offline development, always labelled as such on screen.
+    market_data_provider: Literal["live", "simulated"] = "live"
+
     # --- Scheduling intervals (seconds) -----------------------------------
     enable_scheduler: bool = True
     agent_interval_research_sec: int = 900

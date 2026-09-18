@@ -13,6 +13,13 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+# Set before anything reads Settings: no test may hit a live market-data
+# provider. A suite that quietly makes real HTTP calls is slow, flaky, and
+# dependent on a third party being up. Tests that want real data ask for it
+# explicitly (see tests/unit/test_market_data_providers.py, which stubs the
+# transport instead).
+os.environ.setdefault("MARKET_DATA_PROVIDER", "simulated")
+
 from vibetrading.config import get_settings
 from vibetrading.persistence.orm_models import Base, UserORM
 from vibetrading.rate_limit import limiter

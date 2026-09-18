@@ -17,15 +17,15 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from tests.conftest import make_test_engine, reset_schema, seed_test_users
-from tests.unit.test_market_snapshot import StubBroker, make_candles
+from tests.unit.test_market_snapshot import StubProvider, make_candles
 from vibetrading.api.app import app
-from vibetrading.api.deps import get_broker, get_db
+from vibetrading.api.deps import get_db, get_market_data
 from vibetrading.auth.backend import current_active_user, current_dashboard_user
-from vibetrading.broker.mock_client import MockBrokerClient
 from vibetrading.core.enums import AgentType
 from vibetrading.core.exceptions import BrokerError
 from vibetrading.core.models import Stock
 from vibetrading.core.reliability import CircuitBreakerOpenError
+from vibetrading.marketdata.providers import SimulatedMarketDataProvider
 from vibetrading.persistence.orm_models import UserORM
 from vibetrading.persistence.repositories import get_latest_agent_output, upsert_stock
 
@@ -44,21 +44,21 @@ async def flow_client():
         async with session_factory() as session:
             yield session
 
-    broker_box = {"broker": MockBrokerClient(seed=21)}
+    provider_box = {"provider": SimulatedMarketDataProvider(seed=21)}
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_broker] = lambda: broker_box["broker"]
+    app.dependency_overrides[get_market_data] = lambda: provider_box["provider"]
     app.dependency_overrides[current_active_user] = lambda: FAKE_USER
     app.dependency_overrides[current_dashboard_user] = lambda: FAKE_USER
 
     async with session_factory() as session:
         for symbol in WATCHLIST:
-            await upsert_stock(session, FAKE_USER.id, Stock(symbol=symbol, dhan_security_id="1234"))
+            await upsert_stock(session, FAKE_USER.id, Stock(symbol=symbol))
         await session.commit()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, session_factory, broker_box
+        yield client, session_factory, provider_box
 
     app.dependency_overrides.clear()
     await engine.dispose()
@@ -108,8 +108,8 @@ async def test_analyze_json_api_returns_structured_data_not_html(flow_client):
 
 
 async def test_analyze_with_insufficient_data_renders_data_insufficient_not_a_zero_score(flow_client):
-    client, _, broker_box = flow_client
-    broker_box["broker"] = StubBroker(candles=make_candles(4))
+    client, _, provider_box = flow_client
+    provider_box["provider"] = StubProvider(candles=make_candles(4))
 
     response = await client.post("/stock/RELIANCE/analyze")
 
@@ -120,8 +120,8 @@ async def test_analyze_with_insufficient_data_renders_data_insufficient_not_a_ze
 
 
 async def test_analyze_with_a_broker_error_shows_the_reason_instead_of_failing_silently(flow_client):
-    client, _, broker_box = flow_client
-    broker_box["broker"] = StubBroker(
+    client, _, provider_box = flow_client
+    provider_box["provider"] = StubProvider(
         candle_error=BrokerError("Dhan rejected historical_daily_data: DH-905 : Invalid security id")
     )
 
@@ -221,8 +221,8 @@ async def test_backtest_for_a_stock_not_on_the_watchlist_is_a_clear_404(flow_cli
 async def test_backtest_broker_failure_renders_502_card_instead_of_a_500(flow_client):
     """The reported bug: this path used to be an unhandled AttributeError
     from the Dhan response parser, i.e. a bare 500."""
-    client, _, broker_box = flow_client
-    broker_box["broker"] = StubBroker(
+    client, _, provider_box = flow_client
+    provider_box["provider"] = StubProvider(
         candle_error=BrokerError("Dhan rejected historical_daily_data: DH-905 : Invalid security id")
     )
 
@@ -234,8 +234,8 @@ async def test_backtest_broker_failure_renders_502_card_instead_of_a_500(flow_cl
 
 
 async def test_backtest_with_too_little_history_says_data_insufficient(flow_client):
-    client, _, broker_box = flow_client
-    broker_box["broker"] = StubBroker(candles=make_candles(5))
+    client, _, provider_box = flow_client
+    provider_box["provider"] = StubProvider(candles=make_candles(5))
 
     response = await client.post("/backtest/run", data={"symbol": "RELIANCE", "days": "120"})
 
@@ -260,8 +260,8 @@ async def test_backtest_json_api_validates_parameters(flow_client):
 
 
 async def test_backtest_json_api_maps_broker_failure_to_502_with_the_reason(flow_client):
-    client, _, broker_box = flow_client
-    broker_box["broker"] = StubBroker(candle_error=BrokerError("DH-905 : Invalid security id"))
+    client, _, provider_box = flow_client
+    provider_box["provider"] = StubProvider(candle_error=BrokerError("DH-905 : Invalid security id"))
 
     response = await client.post("/api/backtest/run", json={"symbol": "RELIANCE", "days": 120})
 
@@ -270,13 +270,13 @@ async def test_backtest_json_api_maps_broker_failure_to_502_with_the_reason(flow
 
 
 async def test_backtest_with_an_open_circuit_breaker_renders_503_not_a_500(flow_client):
-    client, _, broker_box = flow_client
+    client, _, provider_box = flow_client
 
-    class TrippedBroker(StubBroker):
+    class TrippedProvider(StubProvider):
         async def get_historical_candles(self, stock, interval, from_date, to_date):
             raise CircuitBreakerOpenError("Circuit 'dhan:123' is open (>= 5 consecutive failures)")
 
-    broker_box["broker"] = TrippedBroker()
+    provider_box["provider"] = TrippedProvider()
 
     response = await client.post("/backtest/run", data={"symbol": "RELIANCE", "days": "120"})
 
@@ -286,16 +286,16 @@ async def test_backtest_with_an_open_circuit_breaker_renders_503_not_a_500(flow_
 
 
 async def test_market_data_with_an_open_circuit_breaker_still_renders_a_panel(flow_client):
-    client, _, broker_box = flow_client
+    client, _, provider_box = flow_client
 
-    class TrippedBroker(StubBroker):
+    class TrippedProvider(StubProvider):
         async def get_historical_candles(self, stock, interval, from_date, to_date):
             raise CircuitBreakerOpenError("Circuit 'dhan:123' is open")
 
         async def get_quote(self, stock):
             raise CircuitBreakerOpenError("Circuit 'dhan:123' is open")
 
-    broker_box["broker"] = TrippedBroker()
+    provider_box["provider"] = TrippedProvider()
 
     response = await client.get("/stock/RELIANCE/market-data")
 

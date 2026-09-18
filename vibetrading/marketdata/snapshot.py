@@ -8,17 +8,17 @@ from vibetrading.agents.strategy.technical_indicators import (
     candles_to_dataframe,
     compute_all_indicators,
 )
-from vibetrading.broker.base import BrokerClient
 from vibetrading.core.enums import DataStatus, MarketDirection
 from vibetrading.core.exceptions import BrokerError, MarketDataUnavailableError
 from vibetrading.core.models import MarketSnapshot, OptionChainSnapshot, Quote, Stock
 from vibetrading.core.reliability import CircuitBreakerOpenError
+from vibetrading.marketdata.providers.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
 # CircuitBreakerOpenError does not descend from BrokerError, so handling only
 # BrokerError left it to escape as an unhandled 500 -- and it fires exactly
-# when the broker has already failed repeatedly, i.e. when the user most
+# when the provider has already failed repeatedly, i.e. when the user most
 # needs the screen to explain itself.
 DATA_FETCH_ERRORS = (BrokerError, CircuitBreakerOpenError)
 
@@ -31,7 +31,7 @@ DEFAULT_LOOKBACK_DAYS = 150
 
 
 async def build_market_snapshot(
-    broker: BrokerClient, stock: Stock, lookback_days: int = DEFAULT_LOOKBACK_DAYS
+    provider: MarketDataProvider, stock: Stock, lookback_days: int = DEFAULT_LOOKBACK_DAYS
 ) -> MarketSnapshot:
     """Collect everything an analysis would run on, before running one.
 
@@ -43,8 +43,8 @@ async def build_market_snapshot(
     now = datetime.now(UTC)
     messages: list[str] = []
 
-    quote = await _fetch_quote(broker, stock, messages)
-    candles, candle_error = await _fetch_candles(broker, stock, lookback_days, now)
+    quote = await _fetch_quote(provider, stock, messages)
+    candles, candle_error = await _fetch_candles(provider, stock, lookback_days, now)
     if candle_error:
         messages.append(candle_error)
 
@@ -77,7 +77,7 @@ async def build_market_snapshot(
         indicator_message = "No historical candles were returned for this instrument."
         messages.append(indicator_message)
 
-    option_chain = await _fetch_option_chain(broker, stock)
+    option_chain = await _fetch_option_chain(provider, stock)
 
     return MarketSnapshot(
         symbol=stock.symbol,
@@ -89,31 +89,31 @@ async def build_market_snapshot(
         direction=direction,
         option_chain=option_chain,
         generated_at=now,
-        source=type(broker).__name__,
-        # One root cause (an unmapped security ID, say) fails several
-        # sections at once and reports the same sentence each time; showing
-        # it once reads as an explanation, three times reads as a stutter.
+        source=provider.name,
+        # One root cause (an unknown ticker, say) fails several sections at
+        # once and reports the same sentence each time; showing it once reads
+        # as an explanation, three times reads as a stutter.
         messages=list(dict.fromkeys(messages)),
     )
 
 
-async def _fetch_quote(broker: BrokerClient, stock: Stock, messages: list[str]) -> Quote:
+async def _fetch_quote(provider: MarketDataProvider, stock: Stock, messages: list[str]) -> Quote:
     try:
-        return await broker.get_quote(stock)
+        return await provider.get_quote(stock)
     except MarketDataUnavailableError as exc:
         messages.append(str(exc))
-        return Quote(symbol=stock.symbol, status=DataStatus.UNAVAILABLE, source=type(broker).__name__, message=str(exc))
+        return Quote(symbol=stock.symbol, status=DataStatus.UNAVAILABLE, source=provider.name, message=str(exc))
     except DATA_FETCH_ERRORS as exc:
         logger.warning("Quote fetch failed for %s: %s", stock.symbol, exc)
         messages.append(str(exc))
-        return Quote(symbol=stock.symbol, status=DataStatus.ERROR, source=type(broker).__name__, message=str(exc))
+        return Quote(symbol=stock.symbol, status=DataStatus.ERROR, source=provider.name, message=str(exc))
 
 
 async def _fetch_candles(
-    broker: BrokerClient, stock: Stock, lookback_days: int, now: datetime
+    provider: MarketDataProvider, stock: Stock, lookback_days: int, now: datetime
 ) -> tuple[list, str | None]:
     try:
-        candles = await broker.get_historical_candles(stock, "1d", now - timedelta(days=lookback_days), now)
+        candles = await provider.get_historical_candles(stock, "1d", now - timedelta(days=lookback_days), now)
         return sorted(candles, key=lambda c: c.timestamp), None
     except MarketDataUnavailableError as exc:
         return [], str(exc)
@@ -122,17 +122,17 @@ async def _fetch_candles(
         return [], str(exc)
 
 
-async def _fetch_option_chain(broker: BrokerClient, stock: Stock) -> OptionChainSnapshot:
+async def _fetch_option_chain(provider: MarketDataProvider, stock: Stock) -> OptionChainSnapshot:
     try:
-        return await broker.get_option_chain(stock)
+        return await provider.get_option_chain(stock)
     except MarketDataUnavailableError as exc:
         return OptionChainSnapshot(
-            symbol=stock.symbol, status=DataStatus.UNAVAILABLE, source=type(broker).__name__, message=str(exc)
+            symbol=stock.symbol, status=DataStatus.UNAVAILABLE, source=provider.name, message=str(exc)
         )
     except DATA_FETCH_ERRORS as exc:
         logger.warning("Option chain fetch failed for %s: %s", stock.symbol, exc)
         return OptionChainSnapshot(
-            symbol=stock.symbol, status=DataStatus.ERROR, source=type(broker).__name__, message=str(exc)
+            symbol=stock.symbol, status=DataStatus.ERROR, source=provider.name, message=str(exc)
         )
 
 

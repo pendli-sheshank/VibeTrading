@@ -15,6 +15,7 @@ from vibetrading.core.enums import AgentType
 from vibetrading.core.models import Stock
 from vibetrading.llm.router import LLMRouter
 from vibetrading.logging_conf import bind_tenant_id
+from vibetrading.marketdata.providers import MarketDataProvider, get_market_data_provider
 from vibetrading.observability.metrics import job_duration_seconds
 from vibetrading.orchestrator.pipeline import TradingPipeline
 from vibetrading.orchestrator.stop_loss_monitor import StopLossMonitor
@@ -45,6 +46,7 @@ class OrchestratorScheduler:
         watchlist: list[Stock],
         settings: Settings | None = None,
         fencing_token: int | None = None,
+        market_data: MarketDataProvider | None = None,
     ):
         self.broker = broker
         self.tenant_id = tenant_id
@@ -52,8 +54,11 @@ class OrchestratorScheduler:
         self.watchlist: list[Stock] = watchlist
 
         llm_router = LLMRouter(self.settings)
+        # Analysis reads market data by ticker from a free provider; the
+        # broker below is only ever asked to trade.
+        self.market_data: MarketDataProvider = market_data or get_market_data_provider(self.settings)
         self.research_agent = ResearchAgent(llm=llm_router.get_adapter(AgentType.RESEARCH))
-        self.technical_agent = TechnicalAgent(broker=broker)
+        self.technical_agent = TechnicalAgent(market_data=self.market_data)
         self.strategy_agent = StrategyAgent(llm=llm_router.get_adapter(AgentType.STRATEGY))
         # fencing_token: this process's proof of exclusive ownership of
         # this tenant's trading loop, as of the last successful lease
@@ -69,7 +74,9 @@ class OrchestratorScheduler:
             strategy_agent=self.strategy_agent,
             risk_engine=self.risk_engine,
         )
-        self.stop_loss_monitor = StopLossMonitor(broker=broker, risk_engine=self.risk_engine)
+        self.stop_loss_monitor = StopLossMonitor(
+            broker=broker, risk_engine=self.risk_engine, market_data=self.market_data
+        )
 
         self.scheduler = AsyncIOScheduler()
 
@@ -188,7 +195,11 @@ class OrchestratorScheduler:
 
 
 async def build_scheduler(
-    broker: BrokerClient, tenant_id: int, settings: Settings | None = None, fencing_token: int | None = None
+    broker: BrokerClient,
+    tenant_id: int,
+    settings: Settings | None = None,
+    fencing_token: int | None = None,
+    market_data: MarketDataProvider | None = None,
 ) -> OrchestratorScheduler:
     """Resolves the tenant's DB-backed watchlist and constructs an
     OrchestratorScheduler — the async counterpart to the (synchronous)
@@ -197,5 +208,10 @@ async def build_scheduler(
     async with get_session() as session:
         watchlist = await get_watchlist(session, tenant_id)
     return OrchestratorScheduler(
-        broker=broker, tenant_id=tenant_id, watchlist=watchlist, settings=settings, fencing_token=fencing_token
+        broker=broker,
+        tenant_id=tenant_id,
+        watchlist=watchlist,
+        settings=settings,
+        fencing_token=fencing_token,
+        market_data=market_data,
     )
