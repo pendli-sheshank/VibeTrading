@@ -92,7 +92,20 @@ class DhanBrokerClient(BrokerClient):
         # not retry it either.
         self._require_valid_token(risk_token)
 
-        security_id = self._security_id(Stock(symbol=order_request.stock_symbol))
+        # The security ID travels on the OrderRequest itself (RiskEngine
+        # copies it from the watchlist Stock). Fall back to the local cache
+        # for callers that build OrderRequests by hand; anything else is a
+        # caller bug, reported plainly rather than failing deep in the SDK.
+        security_id = order_request.dhan_security_id or self._security_id_cache.get(
+            order_request.stock_symbol
+        )
+        if not security_id:
+            raise BrokerError(
+                f"Cannot place an order for {order_request.stock_symbol}: Dhan addresses instruments "
+                "by numeric security ID and none is set. Add it under Settings -> Watchlist (Dhan "
+                "publishes an instrument master listing them). Analysis does not need this — only "
+                "order placement does."
+            )
         transaction_type = "BUY" if order_request.side == OrderSide.BUY else "SELL"
 
         def _call():

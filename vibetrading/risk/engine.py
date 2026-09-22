@@ -182,6 +182,10 @@ class RiskEngine:
             quantity=ctx.quantity,
             stop_loss_price=ctx.stop_loss_price,
             mode=self._settings.vibetrading_execution_mode,
+            # The watchlist Stock's Dhan security ID must travel with the
+            # order -- without it DhanBrokerClient cannot address the
+            # instrument and every live placement fails.
+            dhan_security_id=stock.dhan_security_id,
         )
 
         try:

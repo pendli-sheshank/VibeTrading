@@ -189,6 +189,10 @@ class OrderRequest(BaseModel):
     limit_price: float | None = None
     stop_loss_price: float | None = None
     mode: ExecutionMode
+    # Dhan addresses instruments by numeric security ID. The watchlist Stock
+    # carries this, and RiskEngine copies it here so the broker always has it
+    # -- an OrderRequest without one cannot be placed on Dhan.
+    dhan_security_id: str | None = None
 
 
 class OrderResult(BaseModel):

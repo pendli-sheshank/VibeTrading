@@ -6,9 +6,14 @@ Usage:
     python scripts/run_backtest.py TCS --start 2024-01-01 --end 2024-06-30
 
 Uses the same BacktestEngine (and therefore the exact same StrategyAgent
-code path) as the dashboard's Backtest tab. Historical candles come from
-the configured Execution Agent — Dhan if DHAN_CLIENT_ID/DHAN_ACCESS_TOKEN
-are set, otherwise the deterministic MockBrokerClient.
+code path) as the dashboard's Backtest tab. Historical candles come from the
+ticker-keyed market-data provider (free, key-less sources such as Yahoo) --
+no broker credentials or Dhan security IDs are needed, and the same provider
+is used for live analysis.
+
+With --tenant-id the run is persisted under that account and tenant settings
+(from the DB) are applied; without it, default settings are used and the
+result is persisted under tenant 0.
 """
 
 from __future__ import annotations
@@ -21,11 +26,11 @@ from vibetrading.agents.backtest.backtest_agent import BacktestAgent
 from vibetrading.agents.backtest.engine import BacktestEngine
 from vibetrading.agents.backtest.report import format_summary
 from vibetrading.agents.strategy.strategy_agent import StrategyAgent
-from vibetrading.broker.factory import get_broker_client
 from vibetrading.core.enums import AgentType
 from vibetrading.core.models import Stock
 from vibetrading.llm.router import LLMRouter
 from vibetrading.logging_conf import configure_logging
+from vibetrading.marketdata.providers import get_market_data_provider
 from vibetrading.persistence.db import get_session, init_db
 from vibetrading.settings.cache import get_tenant_settings
 from vibetrading.settings.service import load_settings_from_db
@@ -35,7 +40,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("symbol", help="Stock symbol, e.g. RELIANCE")
     parser.add_argument(
-        "--tenant-id", type=int, required=True, help="Account (tenant) id to run this backtest and persist results under"
+        "--tenant-id",
+        type=int,
+        default=0,
+        help="Account (tenant) id to run this backtest and persist results under (default: 0, settings defaults)",
     )
     parser.add_argument("--start", help="Start date YYYY-MM-DD (default: --days before --end)")
     parser.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
@@ -62,10 +70,10 @@ async def _main() -> None:
     async with get_session() as session:
         await load_settings_from_db(session, args.tenant_id, settings)
 
-    broker = get_broker_client(settings)
-    llm = LLMRouter(settings).get_adapter(AgentType.STRATEGY)
+    market_data = get_market_data_provider(settings)
+    llm = LLMRouter(settings).get_adapter(AgentType.BACKTEST)
     strategy_agent = StrategyAgent(llm=llm)
-    engine = BacktestEngine(broker=broker, strategy_agent=strategy_agent, quantity=args.quantity)
+    engine = BacktestEngine(market_data=market_data, strategy_agent=strategy_agent, quantity=args.quantity)
     backtest_agent = BacktestAgent(engine=engine)
 
     stock = Stock(symbol=args.symbol)
